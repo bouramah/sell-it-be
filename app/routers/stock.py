@@ -1,7 +1,10 @@
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter
-from app.data.fixtures import ECARTS_INVENTAIRE, MOUVEMENTS_STOCK, PRODUITS, STOCKS
+from fastapi import APIRouter, Depends
+from app.core.database import get_db
+from app.data.fixtures import ECARTS_INVENTAIRE, MOUVEMENTS_STOCK, STOCKS
+from app.db_models.models import ProduitDB
 from app.models.schemas import MotifMouvementStock, Secteur, StatutEcartInventaire
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
@@ -50,8 +53,8 @@ def _statut_stock(disponible: int, seuil: int) -> str:
 
 
 @router.get("", response_model=list[LigneStock])
-def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None) -> list[LigneStock]:
-    produits_by_id = {p.id: p for p in PRODUITS}
+def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[LigneStock]:
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     rows = STOCKS
     if boutique_id:
         rows = [s for s in rows if s.boutique_id == boutique_id]
@@ -74,8 +77,8 @@ def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None) -
 
 
 @router.get("/mouvements", response_model=list[LigneMouvementStock])
-def list_mouvements(boutique_id: str | None = None) -> list[LigneMouvementStock]:
-    produits_by_id = {p.id: p for p in PRODUITS}
+def list_mouvements(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneMouvementStock]:
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     rows = MOUVEMENTS_STOCK
     if boutique_id:
         rows = [m for m in rows if m.boutique_id == boutique_id]
@@ -96,8 +99,8 @@ def list_mouvements(boutique_id: str | None = None) -> list[LigneMouvementStock]
 
 
 @router.get("/inventaire", response_model=list[LigneEcartInventaire])
-def list_inventaire(boutique_id: str | None = None) -> list[LigneEcartInventaire]:
-    produits_by_id = {p.id: p for p in PRODUITS}
+def list_inventaire(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneEcartInventaire]:
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     rows = ECARTS_INVENTAIRE
     if boutique_id:
         rows = [e for e in rows if e.boutique_id == boutique_id]

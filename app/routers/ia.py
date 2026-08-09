@@ -1,14 +1,16 @@
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.core.database import get_db
 from app.data.fixtures import (
     ANOMALIES_REPORTING,
     CHATBOT_CONFIG,
     CHATBOT_CONVERSATION_DEMO,
-    PRODUITS,
     SUGGESTIONS_REAPPRO,
     SYNTHESE_REPORTING,
 )
+from app.db_models.models import ProduitDB
 from app.models.schemas import AnomalieReporting, ConversationMessage, Produit, Secteur
 
 router = APIRouter(prefix="/api/v1/ia", tags=["ia"])
@@ -29,19 +31,18 @@ class ReportingIntelligent(BaseModel):
 
 
 @router.get("/catalogue", response_model=list[Produit])
-def catalogue_recherche(q: str | None = None, secteur: Secteur | None = None) -> list[Produit]:
-    result = PRODUITS
+def catalogue_recherche(q: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
+    query = db.query(ProduitDB)
     if secteur:
-        result = [p for p in result if p.secteur == secteur]
+        query = query.filter(ProduitDB.secteur == secteur)
     if q:
-        needle = q.strip().lower()
-        result = [p for p in result if needle in p.nom.lower()]
-    return result
+        query = query.filter(ProduitDB.nom.ilike(f"%{q}%"))
+    return query.all()
 
 
 @router.get("/previsions", response_model=list[SuggestionAvecProduit])
-def previsions_demande() -> list[SuggestionAvecProduit]:
-    produits_by_id = {p.id: p for p in PRODUITS}
+def previsions_demande(db: Session = Depends(get_db)) -> list[SuggestionAvecProduit]:
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     return [
         SuggestionAvecProduit(
             produit_id=s.produit_id,
