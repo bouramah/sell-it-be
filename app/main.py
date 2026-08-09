@@ -1,7 +1,24 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import boutiques, dashboard, stock, utilisateurs
+from app.routers import (
+    caisse,
+    clients,
+    commandes,
+    comptabilite,
+    dashboard,
+    depenses,
+    dettes,
+    ia,
+    livraisons,
+    parametres,
+    promotions,
+    reseau,
+    securite,
+    stock,
+    transferts,
+    utilisateurs,
+)
 
 app = FastAPI(
     title="KFSTORE API",
@@ -16,9 +33,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(boutiques.router)
-app.include_router(stock.router)
+app.include_router(reseau.router)
 app.include_router(utilisateurs.router)
+app.include_router(clients.router)
+app.include_router(stock.router)
+app.include_router(caisse.router)
+app.include_router(commandes.router)
+app.include_router(livraisons.router)
+app.include_router(depenses.router)
+app.include_router(dettes.router)
+app.include_router(transferts.router)
+app.include_router(comptabilite.router)
+app.include_router(promotions.router)
+app.include_router(ia.router)
+app.include_router(securite.router)
+app.include_router(parametres.router)
 app.include_router(dashboard.router)
 
 

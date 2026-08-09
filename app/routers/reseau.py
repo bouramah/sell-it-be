@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException
 
-from app.data.fixtures import BOUTIQUES
-from app.models.schemas import Boutique, Secteur, StatutBoutique
+from app.data.fixtures import BOUTIQUES, FOURNISSEURS
+from app.models.schemas import Boutique, Fournisseur, Secteur, StatutBoutique
 
-router = APIRouter(prefix="/api/v1/boutiques", tags=["boutiques"])
+router = APIRouter(prefix="/api/v1", tags=["reseau"])
 
 
-@router.get("", response_model=list[Boutique])
+@router.get("/boutiques", response_model=list[Boutique])
 def list_boutiques(
     ville: str | None = None,
     secteur: Secteur | None = None,
@@ -22,9 +22,16 @@ def list_boutiques(
     return result
 
 
-@router.get("/{boutique_id}", response_model=Boutique)
+@router.get("/boutiques/{boutique_id}", response_model=Boutique)
 def get_boutique(boutique_id: str) -> Boutique:
     for boutique in BOUTIQUES:
         if boutique.id == boutique_id:
             return boutique
     raise HTTPException(status_code=404, detail="Boutique introuvable")
+
+
+@router.get("/fournisseurs", response_model=list[Fournisseur])
+def list_fournisseurs(secteur: Secteur | None = None) -> list[Fournisseur]:
+    if secteur:
+        return [f for f in FOURNISSEURS if f.secteur == secteur]
+    return FOURNISSEURS
