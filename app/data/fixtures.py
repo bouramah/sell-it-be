@@ -387,12 +387,22 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
         ReferentielItem(id="alimentation_generale", nom="Alimentation générale"),
         ReferentielItem(id="electronique_electromenager", nom="Électronique/Électroménager"),
     ],
-    "villes_communes_quartiers": [
-        ReferentielItem(id="conakry-ratoma-lansanaya", nom="Conakry / Ratoma / Lansanaya"),
-        ReferentielItem(id="conakry-kaloum-madina", nom="Conakry / Kaloum / Madina"),
-        ReferentielItem(id="conakry-matoto-matam", nom="Conakry / Matoto / Matam"),
-        ReferentielItem(id="conakry-kaloum-centre", nom="Conakry / Kaloum / Kaloum centre"),
-        ReferentielItem(id="kankan-centre-ville", nom="Kankan / Kankan Centre / Centre-ville"),
+    "villes": [
+        ReferentielItem(id="conakry", nom="Conakry"),
+        ReferentielItem(id="kankan", nom="Kankan"),
+    ],
+    "communes": [
+        ReferentielItem(id="ratoma", nom="Ratoma"),
+        ReferentielItem(id="kaloum", nom="Kaloum"),
+        ReferentielItem(id="matoto", nom="Matoto"),
+        ReferentielItem(id="kankan-centre", nom="Kankan Centre"),
+    ],
+    "quartiers": [
+        ReferentielItem(id="lansanaya", nom="Lansanaya"),
+        ReferentielItem(id="madina", nom="Madina"),
+        ReferentielItem(id="matam", nom="Matam"),
+        ReferentielItem(id="kaloum-centre", nom="Kaloum centre"),
+        ReferentielItem(id="centre-ville", nom="Centre-ville"),
     ],
     "canaux_vente": [
         ReferentielItem(id="web", nom="Web"),

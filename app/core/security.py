@@ -13,6 +13,8 @@ from app.db_models.models import UtilisateurDB
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+DEFAULT_PASSWORD = "kfstore2026"
+
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)

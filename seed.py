@@ -7,11 +7,9 @@ Default password for every seeded user: "kfstore2026" (change on first login).
 """
 
 from app.core.database import Base, SessionLocal, engine
-from app.core.security import hash_password
-from app.data.fixtures import BOUTIQUES, PRODUITS, UTILISATEURS
-from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, ProduitDB, UtilisateurDB
-
-DEFAULT_PASSWORD = "kfstore2026"
+from app.core.security import DEFAULT_PASSWORD, hash_password
+from app.data.fixtures import BOUTIQUES, PRODUITS, REFERENTIELS, UTILISATEURS
+from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, ProduitDB, ReferentielDB, UtilisateurDB
 
 
 def seed() -> None:
@@ -76,6 +74,19 @@ def seed() -> None:
             print(f"Utilisateurs : {len(UTILISATEURS)} insérés (mot de passe par défaut : {DEFAULT_PASSWORD!r})")
         else:
             print("Utilisateurs déjà présents, ignoré")
+
+        if db.query(ReferentielDB).count() == 0:
+            count = 0
+            for categorie, items in REFERENTIELS.items():
+                if categorie == "secteurs":
+                    continue  # fixed enum, not a managed référentiel
+                for item in items:
+                    db.add(ReferentielDB(id=item.id, categorie=categorie, nom=item.nom))
+                    count += 1
+            db.commit()
+            print(f"Référentiels : {count} insérés")
+        else:
+            print("Référentiels déjà présents, ignoré")
 
     finally:
         db.close()

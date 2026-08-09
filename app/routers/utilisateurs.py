@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
-from app.core.security import get_current_user, hash_password
+from app.core.security import DEFAULT_PASSWORD, get_current_user, hash_password
 from app.data.fixtures import PERMISSIONS
 from app.db_models.models import BoutiqueDB, UtilisateurDB
 from app.models.schemas import Role, Utilisateur
@@ -52,7 +52,7 @@ def create_utilisateur(
         nom=payload.nom,
         prenom=payload.prenom,
         contact=payload.contact,
-        mot_de_passe_hash=hash_password(payload.mot_de_passe),
+        mot_de_passe_hash=hash_password(payload.mot_de_passe or DEFAULT_PASSWORD),
         role=payload.role,
         statut=payload.statut,
         boutiques=boutiques,

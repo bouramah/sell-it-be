@@ -72,3 +72,17 @@ class ProduitDB(Base):
     unite: Mapped[str] = mapped_column(String(40))
     code_barres: Mapped[str] = mapped_column(String(40), unique=True)
     date_peremption: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class ReferentielDB(Base):
+    """Managed lookup lists (villes, communes, quartiers, canaux de vente, ...).
+
+    Secteurs is intentionally NOT stored here: it's a fixed enum baked into
+    Boutique/Produit elsewhere in the schema, not a free-form référentiel.
+    """
+
+    __tablename__ = "referentiels"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    categorie: Mapped[str] = mapped_column(String(60), index=True)
+    nom: Mapped[str] = mapped_column(String(160))

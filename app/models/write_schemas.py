@@ -33,7 +33,7 @@ class UtilisateurCreate(BaseModel):
     nom: str
     prenom: str
     contact: str
-    mot_de_passe: str
+    mot_de_passe: str | None = None
     role: Role
     boutique_ids: list[str] = []
     statut: str = "actif"
@@ -67,6 +67,14 @@ class ProduitUpdate(BaseModel):
     unite: str | None = None
     code_barres: str | None = None
     date_peremption: date | None = None
+
+
+class ReferentielCreate(BaseModel):
+    nom: str
+
+
+class ReferentielUpdate(BaseModel):
+    nom: str
 
 
 class LoginRequest(BaseModel):
