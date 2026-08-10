@@ -198,6 +198,20 @@ class CommandeClientDB(Base):
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutCommandeClient] = mapped_column(Enum(StatutCommandeClient))
 
+    lignes: Mapped[list["LigneCommandeClientDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
+
+
+class LigneCommandeClientDB(Base):
+    __tablename__ = "lignes_commandes_clients"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    commande_id: Mapped[str] = mapped_column(String(40), ForeignKey("commandes_clients.id", ondelete="CASCADE"))
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    quantite: Mapped[int] = mapped_column(Integer)
+    prix_unitaire: Mapped[float] = mapped_column(Float)
+
+    commande: Mapped["CommandeClientDB"] = relationship(back_populates="lignes")
+
 
 class CommandeFournisseurDB(Base):
     __tablename__ = "commandes_fournisseurs"
@@ -208,6 +222,21 @@ class CommandeFournisseurDB(Base):
     date_attendue: Mapped[date] = mapped_column(Date)
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutCommandeFournisseur] = mapped_column(Enum(StatutCommandeFournisseur))
+
+    lignes: Mapped[list["LigneCommandeFournisseurDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
+
+
+class LigneCommandeFournisseurDB(Base):
+    __tablename__ = "lignes_commandes_fournisseurs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    commande_id: Mapped[str] = mapped_column(String(40), ForeignKey("commandes_fournisseurs.id", ondelete="CASCADE"))
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    quantite: Mapped[int] = mapped_column(Integer)
+    prix_unitaire: Mapped[float] = mapped_column(Float)
+    quantite_recue: Mapped[int] = mapped_column(Integer, default=0)
+
+    commande: Mapped["CommandeFournisseurDB"] = relationship(back_populates="lignes")
 
 
 class DetteDB(Base):

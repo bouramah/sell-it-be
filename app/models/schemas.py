@@ -306,6 +306,18 @@ class CommandeClient(BaseModel):
     statut: StatutCommandeClient
 
 
+class ArticleCommande(BaseModel):
+    id: str
+    produit_id: str
+    produit_nom: str
+    quantite: int
+    prix_unitaire: float
+
+
+class CommandeClientDetail(CommandeClient):
+    articles: list[ArticleCommande]
+
+
 class LigneCommandeFournisseur(BaseModel):
     id: str
     fournisseur_id: str
@@ -313,6 +325,14 @@ class LigneCommandeFournisseur(BaseModel):
     date_attendue: date
     montant: float
     statut: StatutCommandeFournisseur
+
+
+class ArticleCommandeFournisseur(ArticleCommande):
+    quantite_recue: int
+
+
+class CommandeFournisseurDetail(LigneCommandeFournisseur):
+    articles: list[ArticleCommandeFournisseur]
 
 
 # --- Livraisons ---------------------------------------------------------------

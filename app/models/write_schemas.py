@@ -167,13 +167,19 @@ class CaisseFermeture(BaseModel):
     solde_reel: float
 
 
+class ArticleCommandeInput(BaseModel):
+    produit_id: str
+    quantite: int
+    prix_unitaire: float | None = None  # si absent, reprend le prix catalogue du produit
+
+
 class CommandeClientCreate(BaseModel):
     client_nom: str
     boutique_id: str
     canal: CanalCommande
     mode_paiement: ModePaiement
-    montant: float
     statut: StatutCommandeClient = StatutCommandeClient.en_attente
+    articles: list[ArticleCommandeInput]
 
 
 class CommandeClientUpdate(BaseModel):
@@ -184,14 +190,23 @@ class CommandeFournisseurCreate(BaseModel):
     fournisseur_id: str
     boutique_id: str
     date_attendue: date
-    montant: float
     statut: StatutCommandeFournisseur = StatutCommandeFournisseur.brouillon
+    articles: list[ArticleCommandeInput]
 
 
 class CommandeFournisseurUpdate(BaseModel):
     statut: StatutCommandeFournisseur | None = None
     date_attendue: date | None = None
-    montant: float | None = None
+
+
+class ReceptionLigne(BaseModel):
+    produit_id: str
+    quantite: int
+
+
+class ReceptionCreate(BaseModel):
+    operateur: str
+    lignes: list[ReceptionLigne]
 
 
 class DetteCreate(BaseModel):
