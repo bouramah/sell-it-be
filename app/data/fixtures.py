@@ -412,6 +412,16 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
         ReferentielItem(id="fournitures", nom="Fournitures"),
         ReferentielItem(id="salaires_ponctuels", nom="Salaires ponctuels"),
     ],
+    "categories_produits": [
+        ReferentielItem(id="vetements-homme", nom="Vêtements homme"),
+        ReferentielItem(id="vetements-femme", nom="Vêtements femme"),
+        ReferentielItem(id="chaussures", nom="Chaussures"),
+        ReferentielItem(id="cereales", nom="Céréales"),
+        ReferentielItem(id="huiles", nom="Huiles"),
+        ReferentielItem(id="epicerie", nom="Épicerie"),
+        ReferentielItem(id="electromenager", nom="Électroménager"),
+        ReferentielItem(id="electronique", nom="Électronique"),
+    ],
     "caisses_comptes": [
         ReferentielItem(id="caisse-principale", nom="Caisse principale"),
         ReferentielItem(id="caisse-secondaire", nom="Caisse secondaire"),
