@@ -24,7 +24,6 @@ from app.models.schemas import (
     ReferentielItem,
     Remboursement,
     Role,
-    Secteur,
     StatutBoutique,
     StatutCaisse,
     StatutCommandeClient,
@@ -49,7 +48,7 @@ BOUTIQUES: list[Boutique] = [
     Boutique(
         id="lansanaya",
         nom="Lansanaya (siège)",
-        secteurs=[Secteur.habillement, Secteur.alimentation_generale, Secteur.electronique_electromenager],
+        secteurs=["habillement", "alimentation_generale", "electronique_electromenager"],
         quartier="Lansanaya",
         commune="Ratoma",
         ville="Conakry",
@@ -61,7 +60,7 @@ BOUTIQUES: list[Boutique] = [
     Boutique(
         id="madina",
         nom="Madina",
-        secteurs=[Secteur.alimentation_generale],
+        secteurs=["alimentation_generale"],
         quartier="Madina",
         commune="Kaloum",
         ville="Conakry",
@@ -73,7 +72,7 @@ BOUTIQUES: list[Boutique] = [
     Boutique(
         id="matam",
         nom="Matam",
-        secteurs=[Secteur.electronique_electromenager],
+        secteurs=["electronique_electromenager"],
         quartier="Matam",
         commune="Matoto",
         ville="Conakry",
@@ -85,7 +84,7 @@ BOUTIQUES: list[Boutique] = [
     Boutique(
         id="kaloum",
         nom="Kaloum",
-        secteurs=[Secteur.habillement],
+        secteurs=["habillement"],
         quartier="Kaloum centre",
         commune="Kaloum",
         ville="Conakry",
@@ -97,7 +96,7 @@ BOUTIQUES: list[Boutique] = [
     Boutique(
         id="kankan",
         nom="Kankan",
-        secteurs=[Secteur.alimentation_generale],
+        secteurs=["alimentation_generale"],
         quartier="Centre-ville",
         commune="Kankan Centre",
         ville="Kankan",
@@ -109,10 +108,10 @@ BOUTIQUES: list[Boutique] = [
 ]
 
 FOURNISSEURS: list[Fournisseur] = [
-    Fournisseur(id="sotramag", nom="Sotramag Import", secteur=Secteur.alimentation_generale, conditions_paiement="30 jours, virement/mobile money", contact="628 00 11 22"),
-    Fournisseur(id="guinee-textiles", nom="Guinée Textiles", secteur=Secteur.habillement, conditions_paiement="Comptant à la livraison", contact="622 45 90 10"),
-    Fournisseur(id="africa-electro", nom="Africa Electro", secteur=Secteur.electronique_electromenager, conditions_paiement="45 jours, lettre de change", contact="655 30 20 40"),
-    Fournisseur(id="grossiste-kaloum", nom="Grossiste Kaloum", secteur=Secteur.habillement, conditions_paiement="Comptant", contact="620 77 88 99"),
+    Fournisseur(id="sotramag", nom="Sotramag Import", secteur="alimentation_generale", conditions_paiement="30 jours, virement/mobile money", contact="628 00 11 22"),
+    Fournisseur(id="guinee-textiles", nom="Guinée Textiles", secteur="habillement", conditions_paiement="Comptant à la livraison", contact="622 45 90 10"),
+    Fournisseur(id="africa-electro", nom="Africa Electro", secteur="electronique_electromenager", conditions_paiement="45 jours, lettre de change", contact="655 30 20 40"),
+    Fournisseur(id="grossiste-kaloum", nom="Grossiste Kaloum", secteur="habillement", conditions_paiement="Comptant", contact="620 77 88 99"),
 ]
 
 UTILISATEURS: list[Utilisateur] = [
@@ -169,16 +168,16 @@ PAIEMENTS_FOURNISSEURS: list[PaiementFournisseur] = [
 # --- Produits & stock -----------------------------------------------------------
 
 PRODUITS: list[Produit] = [
-    Produit(id="robe-wax", nom="Robe wax femme (M)", secteur=Secteur.habillement, categorie="Vêtements femme", prix=70000, unite="pièce", code_barres="6910000000011"),
-    Produit(id="sandales-enfant", nom="Sandales enfant", secteur=Secteur.habillement, categorie="Chaussures", prix=35000, unite="paire", code_barres="6910000000028"),
-    Produit(id="chemise-homme", nom="Chemise homme (L)", secteur=Secteur.habillement, categorie="Vêtements homme", prix=85000, unite="pièce", code_barres="6910000000035"),
-    Produit(id="ensemble-wax-homme", nom="Ensemble wax homme", secteur=Secteur.habillement, categorie="Vêtements homme", prix=120000, unite="pièce", code_barres="6910000000042"),
-    Produit(id="riz-local", nom="Riz local 25kg", secteur=Secteur.alimentation_generale, categorie="Céréales", prix=210000, unite="sac", code_barres="6910000000059", date_peremption=date(2027, 3, 1)),
-    Produit(id="huile-vegetale", nom="Huile végétale 5L", secteur=Secteur.alimentation_generale, categorie="Huiles", prix=68000, unite="bidon", code_barres="6910000000066", date_peremption=date(2026, 9, 30)),
-    Produit(id="sucre-poudre", nom="Sucre en poudre 1kg", secteur=Secteur.alimentation_generale, categorie="Épicerie", prix=9000, unite="paquet", code_barres="6910000000073"),
-    Produit(id="ventilateur", nom="Ventilateur sur pied", secteur=Secteur.electronique_electromenager, categorie="Électroménager", prix=380000, unite="pièce", code_barres="6910000000080"),
-    Produit(id="refrigerateur", nom="Réfrigérateur 200L", secteur=Secteur.electronique_electromenager, categorie="Électroménager", prix=2100000, unite="pièce", code_barres="6910000000097"),
-    Produit(id="televiseur", nom="Téléviseur LED 43\"", secteur=Secteur.electronique_electromenager, categorie="Électronique", prix=1450000, unite="pièce", code_barres="6910000000103"),
+    Produit(id="robe-wax", nom="Robe wax femme (M)", secteur="habillement", categorie="Vêtements femme", prix=70000, unite="pièce", code_barres="6910000000011"),
+    Produit(id="sandales-enfant", nom="Sandales enfant", secteur="habillement", categorie="Chaussures", prix=35000, unite="paire", code_barres="6910000000028"),
+    Produit(id="chemise-homme", nom="Chemise homme (L)", secteur="habillement", categorie="Vêtements homme", prix=85000, unite="pièce", code_barres="6910000000035"),
+    Produit(id="ensemble-wax-homme", nom="Ensemble wax homme", secteur="habillement", categorie="Vêtements homme", prix=120000, unite="pièce", code_barres="6910000000042"),
+    Produit(id="riz-local", nom="Riz local 25kg", secteur="alimentation_generale", categorie="Céréales", prix=210000, unite="sac", code_barres="6910000000059", date_peremption=date(2027, 3, 1)),
+    Produit(id="huile-vegetale", nom="Huile végétale 5L", secteur="alimentation_generale", categorie="Huiles", prix=68000, unite="bidon", code_barres="6910000000066", date_peremption=date(2026, 9, 30)),
+    Produit(id="sucre-poudre", nom="Sucre en poudre 1kg", secteur="alimentation_generale", categorie="Épicerie", prix=9000, unite="paquet", code_barres="6910000000073"),
+    Produit(id="ventilateur", nom="Ventilateur sur pied", secteur="electronique_electromenager", categorie="Électroménager", prix=380000, unite="pièce", code_barres="6910000000080"),
+    Produit(id="refrigerateur", nom="Réfrigérateur 200L", secteur="electronique_electromenager", categorie="Électroménager", prix=2100000, unite="pièce", code_barres="6910000000097"),
+    Produit(id="televiseur", nom="Téléviseur LED 43\"", secteur="electronique_electromenager", categorie="Électronique", prix=1450000, unite="pièce", code_barres="6910000000103"),
 ]
 
 STOCKS: list[StockBoutique] = [
@@ -300,9 +299,9 @@ TRANSFERTS: list[TransfertStock] = [
 # --- Promotions & tarifs ------------------------------------------------------------
 
 PROMOTIONS: list[Promotion] = [
-    Promotion(id="promo-1", nom="-15 % sur les robes wax", boutique_id="lansanaya", secteur=Secteur.habillement, origine="ia", impact_estime="+18 % de ventes estimées", statut=StatutPromotion.en_attente_validation),
-    Promotion(id="promo-2", nom="Déstockage huile 5L", boutique_id="madina", secteur=Secteur.alimentation_generale, origine="gerant", impact_estime="Écoulement stock à rotation lente", statut=StatutPromotion.active),
-    Promotion(id="promo-3", nom="Fin de saison ventilateurs", boutique_id="matam", secteur=Secteur.electronique_electromenager, origine="ia", impact_estime="Marge réduite, rotation accélérée", statut=StatutPromotion.validee),
+    Promotion(id="promo-1", nom="-15 % sur les robes wax", boutique_id="lansanaya", secteur="habillement", origine="ia", impact_estime="+18 % de ventes estimées", statut=StatutPromotion.en_attente_validation),
+    Promotion(id="promo-2", nom="Déstockage huile 5L", boutique_id="madina", secteur="alimentation_generale", origine="gerant", impact_estime="Écoulement stock à rotation lente", statut=StatutPromotion.active),
+    Promotion(id="promo-3", nom="Fin de saison ventilateurs", boutique_id="matam", secteur="electronique_electromenager", origine="ia", impact_estime="Marge réduite, rotation accélérée", statut=StatutPromotion.validee),
     Promotion(id="promo-4", nom="Programme fidélité — points doublés", boutique_id=None, secteur=None, origine="direction", impact_estime="Fidélisation clients récurrents", statut=StatutPromotion.active),
 ]
 

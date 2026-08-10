@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB
-from app.models.schemas import MotifMouvementStock, Secteur, StatutEcartInventaire
+from app.models.schemas import MotifMouvementStock, StatutEcartInventaire
 from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
@@ -18,7 +18,7 @@ class LigneStock(BaseModel):
     boutique_id: str
     produit_id: str
     produit_nom: str
-    secteur: Secteur
+    secteur: str
     quantite_disponible: int
     quantite_reservee: int
     seuil_alerte: int
@@ -57,7 +57,7 @@ def _statut_stock(disponible: int, seuil: int) -> str:
 
 
 @router.get("", response_model=list[LigneStock])
-def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[LigneStock]:
+def list_stock(boutique_id: str | None = None, secteur: str | None = None, db: Session = Depends(get_db)) -> list[LigneStock]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     query = db.query(StockBoutiqueDB)
     if boutique_id:

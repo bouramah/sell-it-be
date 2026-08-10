@@ -11,7 +11,7 @@ from app.data.fixtures import (
     SYNTHESE_REPORTING,
 )
 from app.db_models.models import ProduitDB
-from app.models.schemas import AnomalieReporting, ConversationMessage, Produit, Secteur
+from app.models.schemas import AnomalieReporting, ConversationMessage, Produit
 
 router = APIRouter(prefix="/api/v1/ia", tags=["ia"])
 
@@ -31,7 +31,7 @@ class ReportingIntelligent(BaseModel):
 
 
 @router.get("/catalogue", response_model=list[Produit])
-def catalogue_recherche(q: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
+def catalogue_recherche(q: str | None = None, secteur: str | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
     query = db.query(ProduitDB)
     if secteur:
         query = query.filter(ProduitDB.secteur == secteur)

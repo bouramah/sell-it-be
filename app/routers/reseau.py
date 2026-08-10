@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB
-from app.models.schemas import Boutique, Fournisseur, Secteur, StatutBoutique
+from app.models.schemas import Boutique, Fournisseur, StatutBoutique
 from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate, FournisseurCreate, FournisseurUpdate
 
 router = APIRouter(prefix="/api/v1", tags=["reseau"])
@@ -30,7 +30,7 @@ def _to_schema(b: BoutiqueDB) -> Boutique:
 @router.get("/boutiques", response_model=list[Boutique])
 def list_boutiques(
     ville: str | None = None,
-    secteur: Secteur | None = None,
+    secteur: str | None = None,
     statut: StatutBoutique | None = None,
     db: Session = Depends(get_db),
 ) -> list[Boutique]:
@@ -115,7 +115,7 @@ def delete_boutique(
 
 
 @router.get("/fournisseurs", response_model=list[Fournisseur])
-def list_fournisseurs(secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[FournisseurDB]:
+def list_fournisseurs(secteur: str | None = None, db: Session = Depends(get_db)) -> list[FournisseurDB]:
     query = db.query(FournisseurDB)
     if secteur:
         query = query.filter(FournisseurDB.secteur == secteur)

@@ -12,19 +12,17 @@ from app.models.write_schemas import ReferentielCreate, ReferentielUpdate
 
 router = APIRouter(prefix="/api/v1/parametres", tags=["parametres"])
 
-SECTEURS = "secteurs"
-
 
 def _managed_categories(db: Session) -> list[str]:
     rows = db.query(ReferentielDB.categorie).distinct().all()
     categories = {r[0] for r in rows}
-    categories.update(c for c in REFERENTIELS if c != SECTEURS)
+    categories.update(REFERENTIELS.keys())
     return sorted(categories)
 
 
 @router.get("/referentiels", response_model=dict[str, list[ReferentielItem]])
 def list_referentiels(db: Session = Depends(get_db)) -> dict[str, list[ReferentielItem]]:
-    result: dict[str, list[ReferentielItem]] = {SECTEURS: REFERENTIELS[SECTEURS]}
+    result: dict[str, list[ReferentielItem]] = {}
     for categorie in _managed_categories(db):
         rows = db.query(ReferentielDB).filter(ReferentielDB.categorie == categorie).all()
         result[categorie] = [ReferentielItem(id=r.id, nom=r.nom) for r in rows]
@@ -33,8 +31,6 @@ def list_referentiels(db: Session = Depends(get_db)) -> dict[str, list[Referenti
 
 @router.get("/referentiels/{categorie}", response_model=list[ReferentielItem])
 def get_referentiel(categorie: str, db: Session = Depends(get_db)) -> list[ReferentielItem]:
-    if categorie == SECTEURS:
-        return REFERENTIELS[SECTEURS]
     rows = db.query(ReferentielDB).filter(ReferentielDB.categorie == categorie).all()
     return [ReferentielItem(id=r.id, nom=r.nom) for r in rows]
 
@@ -46,8 +42,6 @@ def create_referentiel_item(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> ReferentielItem:
-    if categorie == SECTEURS:
-        raise HTTPException(status_code=400, detail="Les secteurs sont fixes et ne peuvent pas être modifiés ici")
     item = ReferentielDB(id=str(uuid.uuid4())[:8], categorie=categorie, nom=payload.nom)
     db.add(item)
     db.commit()
@@ -63,8 +57,6 @@ def update_referentiel_item(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> ReferentielItem:
-    if categorie == SECTEURS:
-        raise HTTPException(status_code=400, detail="Les secteurs sont fixes et ne peuvent pas être modifiés ici")
     item = db.query(ReferentielDB).filter(ReferentielDB.id == item_id, ReferentielDB.categorie == categorie).first()
     if not item:
         raise HTTPException(status_code=404, detail="Référentiel introuvable")
@@ -81,8 +73,6 @@ def delete_referentiel_item(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> None:
-    if categorie == SECTEURS:
-        raise HTTPException(status_code=400, detail="Les secteurs sont fixes et ne peuvent pas être modifiés ici")
     item = db.query(ReferentielDB).filter(ReferentielDB.id == item_id, ReferentielDB.categorie == categorie).first()
     if not item:
         raise HTTPException(status_code=404, detail="Référentiel introuvable")

@@ -259,8 +259,6 @@ def seed() -> None:
         if db.query(ReferentielDB).count() == 0:
             count = 0
             for categorie, items in REFERENTIELS.items():
-                if categorie == "secteurs":
-                    continue  # fixed enum, not a managed référentiel
                 for item in items:
                     db.add(ReferentielDB(id=item.id, categorie=categorie, nom=item.nom))
                     count += 1

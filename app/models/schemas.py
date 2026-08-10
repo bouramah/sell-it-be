@@ -5,11 +5,10 @@ from pydantic import BaseModel
 
 
 # --- Enums ---------------------------------------------------------------
-
-class Secteur(str, Enum):
-    habillement = "habillement"
-    alimentation_generale = "alimentation_generale"
-    electronique_electromenager = "electronique_electromenager"
+#
+# Secteur n'est plus un enum fixe : c'est un référentiel géré (catégorie
+# "secteurs" dans la table referentiels), au même titre que quartiers/villes.
+# Les champs "secteur"/"secteurs" ci-dessous sont donc de simples str.
 
 
 class StatutBoutique(str, Enum):
@@ -154,7 +153,7 @@ class StatutPromotion(str, Enum):
 class Boutique(BaseModel):
     id: str
     nom: str
-    secteurs: list[Secteur]
+    secteurs: list[str]
     quartier: str
     commune: str
     ville: str
@@ -167,7 +166,7 @@ class Boutique(BaseModel):
 class Fournisseur(BaseModel):
     id: str
     nom: str
-    secteur: Secteur
+    secteur: str
     conditions_paiement: str
     contact: str
 
@@ -228,7 +227,7 @@ class PaiementFournisseur(BaseModel):
 class Produit(BaseModel):
     id: str
     nom: str
-    secteur: Secteur
+    secteur: str
     categorie: str
     prix: float
     unite: str
@@ -416,7 +415,7 @@ class Promotion(BaseModel):
     id: str
     nom: str
     boutique_id: str | None
-    secteur: Secteur | None
+    secteur: str | None
     origine: OriginePromotion
     impact_estime: str
     statut: StatutPromotion

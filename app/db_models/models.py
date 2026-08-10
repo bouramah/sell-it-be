@@ -10,7 +10,6 @@ from app.models.schemas import (
     ModePaiement,
     OriginePromotion,
     Role,
-    Secteur,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -60,7 +59,7 @@ class BoutiqueSecteurDB(Base):
     __tablename__ = "boutique_secteurs"
 
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), primary_key=True)
-    secteur: Mapped[Secteur] = mapped_column(Enum(Secteur), primary_key=True)
+    secteur: Mapped[str] = mapped_column(String(60), primary_key=True)
 
     boutique: Mapped["BoutiqueDB"] = relationship(back_populates="secteurs")
 
@@ -87,7 +86,7 @@ class ProduitDB(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
-    secteur: Mapped[Secteur] = mapped_column(Enum(Secteur))
+    secteur: Mapped[str] = mapped_column(String(60))
     categorie: Mapped[str] = mapped_column(String(120))
     prix: Mapped[float] = mapped_column(Float)
     unite: Mapped[str] = mapped_column(String(40))
@@ -97,11 +96,7 @@ class ProduitDB(Base):
 
 
 class ReferentielDB(Base):
-    """Managed lookup lists (villes, communes, quartiers, canaux de vente, ...).
-
-    Secteurs is intentionally NOT stored here: it's a fixed enum baked into
-    Boutique/Produit elsewhere in the schema, not a free-form référentiel.
-    """
+    """Managed lookup lists (secteurs, villes, communes, quartiers, canaux de vente, ...)."""
 
     __tablename__ = "referentiels"
 
@@ -115,7 +110,7 @@ class FournisseurDB(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
-    secteur: Mapped[Secteur] = mapped_column(Enum(Secteur))
+    secteur: Mapped[str] = mapped_column(String(60))
     conditions_paiement: Mapped[str] = mapped_column(String(200))
     contact: Mapped[str] = mapped_column(String(60))
 
@@ -347,7 +342,7 @@ class PromotionDB(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
     boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id"), nullable=True)
-    secteur: Mapped[Secteur | None] = mapped_column(Enum(Secteur), nullable=True)
+    secteur: Mapped[str | None] = mapped_column(String(60), nullable=True)
     origine: Mapped[OriginePromotion] = mapped_column(Enum(OriginePromotion))
     impact_estime: Mapped[str] = mapped_column(String(255))
     statut: Mapped[StatutPromotion] = mapped_column(Enum(StatutPromotion))

@@ -7,7 +7,6 @@ from app.models.schemas import (
     MotifMouvementStock,
     ModePaiement,
     Role,
-    Secteur,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -25,7 +24,7 @@ from app.models.schemas import (
 
 class BoutiqueCreate(BaseModel):
     nom: str
-    secteurs: list[Secteur]
+    secteurs: list[str]
     quartier: str
     commune: str
     ville: str
@@ -37,7 +36,7 @@ class BoutiqueCreate(BaseModel):
 
 class BoutiqueUpdate(BaseModel):
     nom: str | None = None
-    secteurs: list[Secteur] | None = None
+    secteurs: list[str] | None = None
     quartier: str | None = None
     commune: str | None = None
     ville: str | None = None
@@ -69,7 +68,7 @@ class UtilisateurUpdate(BaseModel):
 
 class ProduitCreate(BaseModel):
     nom: str
-    secteur: Secteur
+    secteur: str
     categorie: str
     prix: float
     unite: str
@@ -79,7 +78,7 @@ class ProduitCreate(BaseModel):
 
 class ProduitUpdate(BaseModel):
     nom: str | None = None
-    secteur: Secteur | None = None
+    secteur: str | None = None
     categorie: str | None = None
     prix: float | None = None
     unite: str | None = None
@@ -89,14 +88,14 @@ class ProduitUpdate(BaseModel):
 
 class FournisseurCreate(BaseModel):
     nom: str
-    secteur: Secteur
+    secteur: str
     conditions_paiement: str
     contact: str
 
 
 class FournisseurUpdate(BaseModel):
     nom: str | None = None
-    secteur: Secteur | None = None
+    secteur: str | None = None
     conditions_paiement: str | None = None
     contact: str | None = None
 
@@ -279,7 +278,7 @@ class DepenseCreate(BaseModel):
 class PromotionCreate(BaseModel):
     nom: str
     boutique_id: str | None = None
-    secteur: Secteur | None = None
+    secteur: str | None = None
     impact_estime: str
 
 

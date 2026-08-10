@@ -85,7 +85,7 @@ def get_dashboard(db: Session = Depends(get_db)) -> DashboardConsolide:
             LigneComparatifBoutique(
                 boutique_id=b.id,
                 nom=b.nom,
-                secteurs=[s.secteur.value for s in b.secteurs],
+                secteurs=[s.secteur for s in b.secteurs],
                 ca_jour=ca_jour_b,
                 stock_en_alerte=stock_alerte_b,
                 dettes_en_cours=dettes_b,

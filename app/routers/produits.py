@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import ProduitDB
-from app.models.schemas import Produit, Secteur
+from app.models.schemas import Produit
 from app.models.write_schemas import ProduitCreate, ProduitUpdate
 
 router = APIRouter(prefix="/api/v1/produits", tags=["produits"])
@@ -17,7 +17,7 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": 
 
 
 @router.get("", response_model=list[Produit])
-def list_produits(q: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
+def list_produits(q: str | None = None, secteur: str | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
     query = db.query(ProduitDB)
     if secteur:
         query = query.filter(ProduitDB.secteur == secteur)
