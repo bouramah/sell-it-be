@@ -14,11 +14,15 @@ from app.data.fixtures import (
     CLIENTS,
     COMMANDES_CLIENTS,
     COMMANDES_FOURNISSEURS,
+    DEPENSES,
     DETTES,
     ECARTS_INVENTAIRE,
     FOURNISSEURS,
+    LIVRAISONS,
     MOUVEMENTS_CAISSE,
     MOUVEMENTS_STOCK,
+    PAIEMENTS_CLIENTS,
+    PAIEMENTS_FOURNISSEURS,
     PRODUITS,
     REFERENTIELS,
     REMBOURSEMENTS,
@@ -33,11 +37,15 @@ from app.db_models.models import (
     ClientDB,
     CommandeClientDB,
     CommandeFournisseurDB,
+    DepenseDB,
     DetteDB,
     EcartInventaireDB,
     FournisseurDB,
+    LivraisonDB,
     MouvementCaisseDB,
     MouvementStockDB,
+    PaiementClientDB,
+    PaiementFournisseurDB,
     ProduitDB,
     ReferentielDB,
     RemboursementDB,
@@ -195,6 +203,46 @@ def seed() -> None:
             print(f"Transferts de stock : {len(TRANSFERTS)} insérés")
         else:
             print("Transferts de stock déjà présents, ignoré")
+
+        if db.query(LivraisonDB).count() == 0:
+            for l in LIVRAISONS:
+                db.add(LivraisonDB(
+                    id=l.id, commande_id=l.commande_id, livreur=l.livreur, boutique_id=l.boutique_id,
+                    adresse=l.adresse, creneau=l.creneau, statut=l.statut, preuve_disponible=l.preuve_disponible,
+                ))
+            print(f"Livraisons : {len(LIVRAISONS)} insérées")
+        else:
+            print("Livraisons déjà présentes, ignoré")
+
+        if db.query(DepenseDB).count() == 0:
+            for d in DEPENSES:
+                db.add(DepenseDB(
+                    id=d.id, boutique_id=d.boutique_id, categorie=d.categorie, auteur=d.auteur, date=d.date,
+                    montant=d.montant, statut_validation=d.statut_validation, justificatif_disponible=d.justificatif_disponible,
+                ))
+            print(f"Dépenses : {len(DEPENSES)} insérées")
+        else:
+            print("Dépenses déjà présentes, ignoré")
+
+        if db.query(PaiementClientDB).count() == 0:
+            for p in PAIEMENTS_CLIENTS:
+                db.add(PaiementClientDB(
+                    id=p.id, client_nom=p.client_nom, reference=p.reference, boutique_id=p.boutique_id,
+                    mode_paiement=p.mode_paiement, date=p.date, montant=p.montant, statut=p.statut,
+                ))
+            print(f"Paiements clients : {len(PAIEMENTS_CLIENTS)} insérés")
+        else:
+            print("Paiements clients déjà présents, ignoré")
+
+        if db.query(PaiementFournisseurDB).count() == 0:
+            for p in PAIEMENTS_FOURNISSEURS:
+                db.add(PaiementFournisseurDB(
+                    id=p.id, fournisseur_nom=p.fournisseur_nom, reference=p.reference, boutique_id=p.boutique_id,
+                    mode_paiement=p.mode_paiement, date=p.date, montant=p.montant, statut=p.statut,
+                ))
+            print(f"Paiements fournisseurs : {len(PAIEMENTS_FOURNISSEURS)} insérés")
+        else:
+            print("Paiements fournisseurs déjà présents, ignoré")
 
         if db.query(ReferentielDB).count() == 0:
             count = 0

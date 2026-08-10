@@ -15,6 +15,7 @@ from app.models.schemas import (
     StatutCommandeFournisseur,
     StatutDette,
     StatutEcartInventaire,
+    StatutLivraison,
     StatutTransfert,
     TiersType,
     TypeMouvementCaisse,
@@ -233,6 +234,27 @@ class TransfertCreate(BaseModel):
 
 class TransfertStatutUpdate(BaseModel):
     statut: StatutTransfert
+
+
+class LivraisonCreate(BaseModel):
+    commande_id: str
+    livreur: str
+    boutique_id: str
+    adresse: str
+    creneau: str
+
+
+class LivraisonStatutUpdate(BaseModel):
+    statut: StatutLivraison
+
+
+class DepenseCreate(BaseModel):
+    boutique_id: str
+    categorie: str
+    auteur: str
+    date: date
+    montant: float
+    justificatif_disponible: bool = False
 
 
 class ReferentielCreate(BaseModel):

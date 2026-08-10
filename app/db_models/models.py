@@ -17,7 +17,10 @@ from app.models.schemas import (
     StatutCommandeFournisseur,
     StatutDette,
     StatutEcartInventaire,
+    StatutLivraison,
+    StatutPaiement,
     StatutTransfert,
+    StatutValidationDepense,
     TiersType,
     TypeMouvementCaisse,
 )
@@ -277,3 +280,55 @@ class TransfertStockDB(Base):
     quantite: Mapped[int] = mapped_column(Integer)
     demandeur: Mapped[str] = mapped_column(String(160))
     statut: Mapped[StatutTransfert] = mapped_column(Enum(StatutTransfert))
+
+
+class LivraisonDB(Base):
+    __tablename__ = "livraisons"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    commande_id: Mapped[str] = mapped_column(String(40), ForeignKey("commandes_clients.id"))
+    livreur: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    adresse: Mapped[str] = mapped_column(String(255))
+    creneau: Mapped[str] = mapped_column(String(80))
+    statut: Mapped[StatutLivraison] = mapped_column(Enum(StatutLivraison))
+    preuve_disponible: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class DepenseDB(Base):
+    __tablename__ = "depenses"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    categorie: Mapped[str] = mapped_column(String(120))
+    auteur: Mapped[str] = mapped_column(String(160))
+    date: Mapped[date] = mapped_column(Date)
+    montant: Mapped[float] = mapped_column(Float)
+    statut_validation: Mapped[StatutValidationDepense] = mapped_column(Enum(StatutValidationDepense))
+    justificatif_disponible: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class PaiementClientDB(Base):
+    __tablename__ = "paiements_clients"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    client_nom: Mapped[str] = mapped_column(String(160))
+    reference: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
+    date: Mapped[date] = mapped_column(Date)
+    montant: Mapped[float] = mapped_column(Float)
+    statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
+
+
+class PaiementFournisseurDB(Base):
+    __tablename__ = "paiements_fournisseurs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    fournisseur_nom: Mapped[str] = mapped_column(String(160))
+    reference: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
+    date: Mapped[date] = mapped_column(Date)
+    montant: Mapped[float] = mapped_column(Float)
+    statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
