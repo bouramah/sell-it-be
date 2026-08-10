@@ -24,6 +24,7 @@ from app.data.fixtures import (
     PAIEMENTS_CLIENTS,
     PAIEMENTS_FOURNISSEURS,
     PRODUITS,
+    PROMOTIONS,
     REFERENTIELS,
     REMBOURSEMENTS,
     STOCKS,
@@ -47,6 +48,7 @@ from app.db_models.models import (
     PaiementClientDB,
     PaiementFournisseurDB,
     ProduitDB,
+    PromotionDB,
     ReferentielDB,
     RemboursementDB,
     StockBoutiqueDB,
@@ -217,8 +219,8 @@ def seed() -> None:
         if db.query(DepenseDB).count() == 0:
             for d in DEPENSES:
                 db.add(DepenseDB(
-                    id=d.id, boutique_id=d.boutique_id, categorie=d.categorie, auteur=d.auteur, date=d.date,
-                    montant=d.montant, statut_validation=d.statut_validation, justificatif_disponible=d.justificatif_disponible,
+                    id=d.id, boutique_id=d.boutique_id, caisse_id=None, categorie=d.categorie, auteur=d.auteur, date=d.date,
+                    montant=d.montant, statut_validation=d.statut_validation, justificatif_url=None,
                 ))
             print(f"Dépenses : {len(DEPENSES)} insérées")
         else:
@@ -243,6 +245,16 @@ def seed() -> None:
             print(f"Paiements fournisseurs : {len(PAIEMENTS_FOURNISSEURS)} insérés")
         else:
             print("Paiements fournisseurs déjà présents, ignoré")
+
+        if db.query(PromotionDB).count() == 0:
+            for p in PROMOTIONS:
+                db.add(PromotionDB(
+                    id=p.id, nom=p.nom, boutique_id=p.boutique_id, secteur=p.secteur,
+                    origine=p.origine, impact_estime=p.impact_estime, statut=p.statut,
+                ))
+            print(f"Promotions : {len(PROMOTIONS)} insérées")
+        else:
+            print("Promotions déjà présentes, ignoré")
 
         if db.query(ReferentielDB).count() == 0:
             count = 0

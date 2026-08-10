@@ -8,6 +8,7 @@ from app.models.schemas import (
     CanalCommande,
     MotifMouvementStock,
     ModePaiement,
+    OriginePromotion,
     Role,
     Secteur,
     SegmentClient,
@@ -19,6 +20,7 @@ from app.models.schemas import (
     StatutEcartInventaire,
     StatutLivraison,
     StatutPaiement,
+    StatutPromotion,
     StatutTransfert,
     StatutValidationDepense,
     TiersType,
@@ -264,6 +266,7 @@ class RemboursementDB(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     dette_id: Mapped[str] = mapped_column(String(40), ForeignKey("dettes.id", ondelete="CASCADE"))
+    caisse_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("caisses.id"), nullable=True)
     montant: Mapped[float] = mapped_column(Float)
     mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
     date: Mapped[date] = mapped_column(Date)
@@ -302,12 +305,13 @@ class DepenseDB(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    caisse_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("caisses.id"), nullable=True)
     categorie: Mapped[str] = mapped_column(String(120))
     auteur: Mapped[str] = mapped_column(String(160))
     date: Mapped[date] = mapped_column(Date)
     montant: Mapped[float] = mapped_column(Float)
     statut_validation: Mapped[StatutValidationDepense] = mapped_column(Enum(StatutValidationDepense))
-    justificatif_disponible: Mapped[bool] = mapped_column(Boolean, default=False)
+    justificatif_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class PaiementClientDB(Base):
@@ -335,3 +339,15 @@ class PaiementFournisseurDB(Base):
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
     document_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class PromotionDB(Base):
+    __tablename__ = "promotions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id"), nullable=True)
+    secteur: Mapped[Secteur | None] = mapped_column(Enum(Secteur), nullable=True)
+    origine: Mapped[OriginePromotion] = mapped_column(Enum(OriginePromotion))
+    impact_estime: Mapped[str] = mapped_column(String(255))
+    statut: Mapped[StatutPromotion] = mapped_column(Enum(StatutPromotion))

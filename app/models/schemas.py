@@ -356,12 +356,13 @@ class Livraison(BaseModel):
 class Depense(BaseModel):
     id: str
     boutique_id: str
+    caisse_id: str | None = None
     categorie: str
     auteur: str
     date: date
     montant: float
     statut_validation: StatutValidationDepense
-    justificatif_disponible: bool
+    justificatif_url: str | None = None
 
 
 # --- Dettes / créances -----------------------------------------------------------
@@ -380,6 +381,7 @@ class Dette(BaseModel):
 class Remboursement(BaseModel):
     id: str
     dette_id: str
+    caisse_id: str | None = None
     montant: float
     mode_paiement: ModePaiement
     date: date

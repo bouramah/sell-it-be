@@ -16,6 +16,7 @@ from app.models.schemas import (
     StatutDette,
     StatutEcartInventaire,
     StatutLivraison,
+    StatutPromotion,
     StatutTransfert,
     TiersType,
     TypeMouvementCaisse,
@@ -236,6 +237,7 @@ class DetteCreate(BaseModel):
 
 
 class RemboursementCreate(BaseModel):
+    caisse_id: str
     montant: float
     mode_paiement: ModePaiement
     operateur: str
@@ -267,11 +269,22 @@ class LivraisonStatutUpdate(BaseModel):
 
 class DepenseCreate(BaseModel):
     boutique_id: str
+    caisse_id: str
     categorie: str
     auteur: str
     date: date
     montant: float
-    justificatif_disponible: bool = False
+
+
+class PromotionCreate(BaseModel):
+    nom: str
+    boutique_id: str | None = None
+    secteur: Secteur | None = None
+    impact_estime: str
+
+
+class PromotionStatutUpdate(BaseModel):
+    statut: StatutPromotion
 
 
 class ReferentielCreate(BaseModel):

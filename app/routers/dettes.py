@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import DetteDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB
-from app.models.schemas import Remboursement, StatutDette, StatutPaiement, TiersType
+from app.db_models.models import CaisseDB, DetteDB, MouvementCaisseDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB
+from app.models.schemas import Remboursement, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 
 router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
@@ -88,9 +88,18 @@ def encaisser_remboursement(
     if payload.montant > d.solde_restant:
         raise HTTPException(status_code=400, detail="Le montant dépasse le solde restant")
 
+    caisse = db.get(CaisseDB, payload.caisse_id)
+    if not caisse:
+        raise HTTPException(status_code=404, detail="Caisse introuvable")
+    if caisse.boutique_id != d.boutique_id:
+        raise HTTPException(status_code=400, detail="Cette caisse n'appartient pas à la boutique de la dette")
+    if caisse.statut != StatutCaisse.ouverte:
+        raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un encaissement")
+
     r = RemboursementDB(
         id=str(uuid.uuid4())[:8],
         dette_id=dette_id,
+        caisse_id=payload.caisse_id,
         montant=payload.montant,
         mode_paiement=payload.mode_paiement,
         date=date.today(),
@@ -100,6 +109,16 @@ def encaisser_remboursement(
 
     d.solde_restant -= payload.montant
     d.statut = StatutDette.soldee if d.solde_restant <= 0 else StatutDette.en_cours
+
+    # Une créance client encaissée fait rentrer de l'argent en caisse ; une dette fournisseur réglée en fait sortir.
+    type_mouvement = TypeMouvementCaisse.encaissement if d.tiers_type == TiersType.client else TypeMouvementCaisse.decaissement
+    signed_montant = payload.montant if type_mouvement == TypeMouvementCaisse.encaissement else -payload.montant
+    db.add(MouvementCaisseDB(
+        id=str(uuid.uuid4())[:8], horodatage=datetime.now(timezone.utc), boutique_id=caisse.boutique_id,
+        caisse_id=caisse.id, caisse_libelle=caisse.libelle, type=type_mouvement,
+        motif=f"Remboursement dette — {d.tiers_nom}", operateur=payload.operateur, montant=signed_montant,
+    ))
+    caisse.solde_theorique += signed_montant
 
     if d.tiers_type == TiersType.client:
         db.add(PaiementClientDB(
