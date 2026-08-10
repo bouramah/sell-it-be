@@ -108,7 +108,8 @@ def seed() -> None:
 
         if db.query(ClientDB).count() == 0:
             for c in CLIENTS:
-                db.add(ClientDB(id=c.id, nom=c.nom, contact=c.contact, boutique_id=c.boutique_id, segment=c.segment, credit_autorise=c.credit_autorise))
+                boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(c.boutique_ids)).all()
+                db.add(ClientDB(id=c.id, nom=c.nom, contact=c.contact, boutiques=boutiques, segment=c.segment, credit_autorise=c.credit_autorise))
             print(f"Clients : {len(CLIENTS)} insérés")
         else:
             print("Clients déjà présents, ignoré")

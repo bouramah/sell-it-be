@@ -33,6 +33,13 @@ utilisateur_boutiques = Table(
     Column("boutique_id", String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), primary_key=True),
 )
 
+client_boutiques = Table(
+    "client_boutiques",
+    Base.metadata,
+    Column("client_id", String(40), ForeignKey("clients.id", ondelete="CASCADE"), primary_key=True),
+    Column("boutique_id", String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class BoutiqueDB(Base):
     __tablename__ = "boutiques"
@@ -54,6 +61,9 @@ class BoutiqueDB(Base):
     )
     utilisateurs: Mapped[list["UtilisateurDB"]] = relationship(
         secondary=utilisateur_boutiques, back_populates="boutiques"
+    )
+    clients: Mapped[list["ClientDB"]] = relationship(
+        secondary=client_boutiques, back_populates="boutiques"
     )
 
 
@@ -137,12 +147,15 @@ class ClientDB(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
     contact: Mapped[str] = mapped_column(String(60))
-    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     segment: Mapped[SegmentClient] = mapped_column(Enum(SegmentClient))
     credit_autorise: Mapped[bool] = mapped_column(Boolean, default=False)
     quartier: Mapped[str | None] = mapped_column(String(120), nullable=True)
     commune: Mapped[str | None] = mapped_column(String(120), nullable=True)
     ville: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    boutiques: Mapped[list["BoutiqueDB"]] = relationship(
+        secondary=client_boutiques, back_populates="clients"
+    )
 
 
 class StockBoutiqueDB(Base):

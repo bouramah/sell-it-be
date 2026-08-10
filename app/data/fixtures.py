@@ -141,15 +141,15 @@ PERMISSIONS: list[dict] = [
 # --- Clients & paiements --------------------------------------------------------
 
 CLIENTS: list[Client] = [
-    Client(id="cli-kaba", nom="Ibrahima Kaba", contact="621 30 40 50", boutique_id="madina", segment="regulier", credit_autorise=True, solde_dette=210000),
-    Client(id="cli-cisse", nom="Mariame Cissé", contact="628 90 11 22", boutique_id="lansanaya", segment="a_risque", credit_autorise=True, solde_dette=890000),
-    Client(id="cli-barry", nom="Aissatou Barry", contact="622 15 60 70", boutique_id="lansanaya", segment="nouveau", credit_autorise=False, solde_dette=0),
-    Client(id="cli-sylla", nom="Kadiatou Sylla", contact="655 44 33 22", boutique_id="matam", segment="fidele", credit_autorise=True, solde_dette=0),
-    Client(id="cli-diallo-ao", nom="Alpha Oumar Diallo", contact="620 77 66 55", boutique_id="kankan", segment="regulier", credit_autorise=True, solde_dette=600000),
-    Client(id="cli-toure", nom="Néné Touré", contact="626 12 34 56", boutique_id="matam", segment="fidele", credit_autorise=True, solde_dette=0),
-    Client(id="cli-fofana", nom="Sory Fofana", contact="626 55 12 90", boutique_id="kaloum", segment="a_risque", credit_autorise=True, solde_dette=260000),
-    Client(id="cli-barry-d", nom="Djénabou Barry", contact="621 90 40 10", boutique_id="madina", segment="regulier", credit_autorise=True, solde_dette=180000),
-    Client(id="cli-conde", nom="Lansana Condé", contact="628 33 20 15", boutique_id="lansanaya", segment="a_risque", credit_autorise=True, solde_dette=710000),
+    Client(id="cli-kaba", nom="Ibrahima Kaba", contact="621 30 40 50", boutique_ids=["madina"], segment="regulier", credit_autorise=True, solde_dette=210000),
+    Client(id="cli-cisse", nom="Mariame Cissé", contact="628 90 11 22", boutique_ids=["lansanaya"], segment="a_risque", credit_autorise=True, solde_dette=890000),
+    Client(id="cli-barry", nom="Aissatou Barry", contact="622 15 60 70", boutique_ids=["lansanaya", "kaloum"], segment="nouveau", credit_autorise=False, solde_dette=0),
+    Client(id="cli-sylla", nom="Kadiatou Sylla", contact="655 44 33 22", boutique_ids=["matam"], segment="fidele", credit_autorise=True, solde_dette=0),
+    Client(id="cli-diallo-ao", nom="Alpha Oumar Diallo", contact="620 77 66 55", boutique_ids=["kankan"], segment="regulier", credit_autorise=True, solde_dette=600000),
+    Client(id="cli-toure", nom="Néné Touré", contact="626 12 34 56", boutique_ids=["matam"], segment="fidele", credit_autorise=True, solde_dette=0),
+    Client(id="cli-fofana", nom="Sory Fofana", contact="626 55 12 90", boutique_ids=["kaloum"], segment="a_risque", credit_autorise=True, solde_dette=260000),
+    Client(id="cli-barry-d", nom="Djénabou Barry", contact="621 90 40 10", boutique_ids=["madina"], segment="regulier", credit_autorise=True, solde_dette=180000),
+    Client(id="cli-conde", nom="Lansana Condé", contact="628 33 20 15", boutique_ids=["lansanaya"], segment="a_risque", credit_autorise=True, solde_dette=710000),
 ]
 
 PAIEMENTS_CLIENTS: list[PaiementClient] = [

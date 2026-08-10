@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import ClientDB, CommandeClientDB, CommandeFournisseurDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
+from app.db_models.models import BoutiqueDB, ClientDB, CommandeClientDB, CommandeFournisseurDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
 from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutPaiement, TiersType
 from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementClientCreate, PaiementFournisseurCreate
 
@@ -39,7 +39,7 @@ def _to_schema(c: ClientDB, db: Session) -> Client:
         id=c.id,
         nom=c.nom,
         contact=c.contact,
-        boutique_id=c.boutique_id,
+        boutique_ids=[b.id for b in c.boutiques],
         segment=c.segment,
         credit_autorise=c.credit_autorise,
         solde_dette=_solde_dette(db, c.nom),
@@ -53,7 +53,7 @@ def _to_schema(c: ClientDB, db: Session) -> Client:
 def list_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[Client]:
     query = db.query(ClientDB)
     if boutique_id:
-        query = query.filter(ClientDB.boutique_id == boutique_id)
+        query = query.filter(ClientDB.boutiques.any(BoutiqueDB.id == boutique_id))
     return [_to_schema(c, db) for c in query.all()]
 
 
@@ -63,7 +63,9 @@ def create_client(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> Client:
-    c = ClientDB(id=str(uuid.uuid4())[:8], **payload.model_dump())
+    data = payload.model_dump(exclude={"boutique_ids"})
+    boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
+    c = ClientDB(id=str(uuid.uuid4())[:8], boutiques=boutiques, **data)
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -80,8 +82,11 @@ def update_client(
     c = db.get(ClientDB, client_id)
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True, exclude={"boutique_ids"})
+    for field, value in data.items():
         setattr(c, field, value)
+    if payload.boutique_ids is not None:
+        c.boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
     db.commit()
     db.refresh(c)
     return _to_schema(c, db)

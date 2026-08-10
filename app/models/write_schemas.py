@@ -107,7 +107,7 @@ class FournisseurUpdate(BaseModel):
 class ClientCreate(BaseModel):
     nom: str
     contact: str
-    boutique_id: str
+    boutique_ids: list[str]
     segment: SegmentClient = SegmentClient.nouveau
     credit_autorise: bool = False
     quartier: str | None = None
@@ -118,7 +118,7 @@ class ClientCreate(BaseModel):
 class ClientUpdate(BaseModel):
     nom: str | None = None
     contact: str | None = None
-    boutique_id: str | None = None
+    boutique_ids: list[str] | None = None
     segment: SegmentClient | None = None
     credit_autorise: bool | None = None
     quartier: str | None = None

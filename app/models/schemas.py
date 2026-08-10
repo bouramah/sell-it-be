@@ -195,7 +195,7 @@ class Client(BaseModel):
     id: str
     nom: str
     contact: str
-    boutique_id: str
+    boutique_ids: list[str]
     segment: SegmentClient
     credit_autorise: bool
     solde_dette: float
