@@ -27,6 +27,7 @@ from app.models.schemas import (
     LigneCommandeFournisseur,
     ModePaiement,
     MotifMouvementStock,
+    StatutCommandeClient,
     StatutCommandeFournisseur,
     StatutPaiement,
 )
@@ -35,6 +36,7 @@ from app.models.write_schemas import (
     CommandeClientUpdate,
     CommandeFournisseurCreate,
     CommandeFournisseurUpdate,
+    CorrectionReceptionCreate,
     ReceptionCreate,
 )
 
@@ -106,21 +108,45 @@ def create_commande_client(
     return get_commande_client(c.id, db)
 
 
-@router.put("/commandes-clients/{commande_id}", response_model=CommandeClient)
+@router.put("/commandes-clients/{commande_id}", response_model=CommandeClientDetail)
 def update_commande_client(
     commande_id: str,
     payload: CommandeClientUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-) -> CommandeClientDB:
+) -> CommandeClientDetail:
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+
+    data = payload.model_dump(exclude_unset=True)
+    articles = data.pop("articles", None)
+    for field, value in data.items():
         setattr(c, field, value)
+
+    if articles is not None:
+        if c.statut != StatutCommandeClient.en_attente:
+            raise HTTPException(status_code=400, detail="Seule une commande en attente peut être modifiée")
+        if not articles:
+            raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
+        produits = _produits_by_id(db, {a["produit_id"] for a in articles})
+        for l in list(c.lignes):
+            db.delete(l)
+        db.flush()
+        montant = 0.0
+        for a in articles:
+            prix = a["prix_unitaire"] if a.get("prix_unitaire") is not None else produits[a["produit_id"]].prix
+            montant += a["quantite"] * prix
+            db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], prix_unitaire=prix))
+        c.montant = montant
+
+        paiement = db.query(PaiementClientDB).filter(PaiementClientDB.reference == f"#{c.id}").first()
+        if paiement:
+            paiement.montant = montant
+            paiement.client_nom = c.client_nom
+
     db.commit()
-    db.refresh(c)
-    return c
+    return get_commande_client(commande_id, db)
 
 
 @router.get("/commandes-fournisseurs", response_model=list[LigneCommandeFournisseur])
@@ -175,21 +201,40 @@ def create_commande_fournisseur(
     return get_commande_fournisseur(c.id, db)
 
 
-@router.put("/commandes-fournisseurs/{commande_id}", response_model=LigneCommandeFournisseur)
+@router.put("/commandes-fournisseurs/{commande_id}", response_model=CommandeFournisseurDetail)
 def update_commande_fournisseur(
     commande_id: str,
     payload: CommandeFournisseurUpdate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
-) -> CommandeFournisseurDB:
+) -> CommandeFournisseurDetail:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+
+    data = payload.model_dump(exclude_unset=True)
+    articles = data.pop("articles", None)
+    for field, value in data.items():
         setattr(c, field, value)
+
+    if articles is not None:
+        if c.statut != StatutCommandeFournisseur.brouillon:
+            raise HTTPException(status_code=400, detail="Seule une commande en brouillon peut être modifiée")
+        if not articles:
+            raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
+        produits = _produits_by_id(db, {a["produit_id"] for a in articles})
+        for l in list(c.lignes):
+            db.delete(l)
+        db.flush()
+        montant = 0.0
+        for a in articles:
+            prix = a["prix_unitaire"] if a.get("prix_unitaire") is not None else produits[a["produit_id"]].prix
+            montant += a["quantite"] * prix
+            db.add(LigneCommandeFournisseurDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], prix_unitaire=prix, quantite_recue=0))
+        c.montant = montant
+
     db.commit()
-    db.refresh(c)
-    return c
+    return get_commande_fournisseur(commande_id, db)
 
 
 @router.post("/commandes-fournisseurs/{commande_id}/reception", response_model=CommandeFournisseurDetail)
@@ -246,6 +291,74 @@ def receptionner_commande_fournisseur(
         ))
     else:
         c.statut = StatutCommandeFournisseur.receptionnee_partielle
+
+    db.commit()
+    return get_commande_fournisseur(commande_id, db)
+
+
+@router.put("/commandes-fournisseurs/{commande_id}/reception", response_model=CommandeFournisseurDetail)
+def corriger_reception_commande_fournisseur(
+    commande_id: str,
+    payload: CorrectionReceptionCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> CommandeFournisseurDetail:
+    c = db.get(CommandeFournisseurDB, commande_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    if not payload.lignes:
+        raise HTTPException(status_code=400, detail="Aucune ligne à corriger")
+
+    lignes_by_produit = {l.produit_id: l for l in c.lignes}
+    for r in payload.lignes:
+        ligne = lignes_by_produit.get(r.produit_id)
+        if not ligne:
+            raise HTTPException(status_code=400, detail=f"Produit {r.produit_id} absent de la commande")
+        if r.quantite_recue < 0 or r.quantite_recue > ligne.quantite:
+            raise HTTPException(status_code=400, detail=f"La quantité corrigée pour {r.produit_id} doit être comprise entre 0 et {ligne.quantite}")
+
+    now = datetime.now(timezone.utc)
+    etait_receptionnee = c.statut == StatutCommandeFournisseur.receptionnee
+    for r in payload.lignes:
+        ligne = lignes_by_produit[r.produit_id]
+        delta = r.quantite_recue - ligne.quantite_recue
+        if delta == 0:
+            continue
+        ligne.quantite_recue = r.quantite_recue
+
+        stock = db.get(StockBoutiqueDB, (c.boutique_id, r.produit_id))
+        if stock:
+            stock.quantite_disponible = max(stock.quantite_disponible + delta, 0)
+            stock.derniere_mouvement = now
+        elif delta > 0:
+            db.add(StockBoutiqueDB(
+                boutique_id=c.boutique_id, produit_id=r.produit_id,
+                quantite_disponible=max(delta, 0), quantite_reservee=0, seuil_alerte=0, derniere_mouvement=now,
+            ))
+        db.add(MouvementStockDB(
+            id=str(uuid.uuid4())[:8], horodatage=now, produit_id=r.produit_id, boutique_id=c.boutique_id,
+            motif=MotifMouvementStock.correction_inventaire, operateur=payload.operateur, quantite=delta,
+        ))
+
+    if all(l.quantite_recue >= l.quantite for l in c.lignes):
+        c.statut = StatutCommandeFournisseur.receptionnee
+        c.date_reception = c.date_reception or date.today()
+        if not etait_receptionnee:
+            fournisseur = db.get(FournisseurDB, c.fournisseur_id)
+            db.add(PaiementFournisseurDB(
+                id=str(uuid.uuid4())[:8], fournisseur_nom=fournisseur.nom if fournisseur else c.fournisseur_id,
+                reference=f"#{c.id}", boutique_id=c.boutique_id, mode_paiement=ModePaiement.virement,
+                date=date.today(), montant=c.montant, statut=StatutPaiement.en_attente,
+            ))
+    else:
+        c.statut = StatutCommandeFournisseur.receptionnee_partielle if any(l.quantite_recue > 0 for l in c.lignes) else StatutCommandeFournisseur.validee
+        c.date_reception = None
+        if etait_receptionnee:
+            paiement = db.query(PaiementFournisseurDB).filter(
+                PaiementFournisseurDB.reference == f"#{c.id}", PaiementFournisseurDB.statut == StatutPaiement.en_attente,
+            ).first()
+            if paiement:
+                db.delete(paiement)
 
     db.commit()
     return get_commande_fournisseur(commande_id, db)

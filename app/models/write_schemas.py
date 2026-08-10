@@ -185,6 +185,10 @@ class CommandeClientCreate(BaseModel):
 
 class CommandeClientUpdate(BaseModel):
     statut: StatutCommandeClient | None = None
+    client_nom: str | None = None
+    canal: CanalCommande | None = None
+    mode_paiement: ModePaiement | None = None
+    articles: list[ArticleCommandeInput] | None = None
 
 
 class CommandeFournisseurCreate(BaseModel):
@@ -197,6 +201,19 @@ class CommandeFournisseurCreate(BaseModel):
 
 class CommandeFournisseurUpdate(BaseModel):
     statut: StatutCommandeFournisseur | None = None
+    date_attendue: date | None = None
+    fournisseur_id: str | None = None
+    articles: list[ArticleCommandeInput] | None = None
+
+
+class CorrectionReceptionLigne(BaseModel):
+    produit_id: str
+    quantite_recue: int
+
+
+class CorrectionReceptionCreate(BaseModel):
+    operateur: str
+    lignes: list[CorrectionReceptionLigne]
     date_attendue: date | None = None
 
 
@@ -238,7 +255,7 @@ class TransfertStatutUpdate(BaseModel):
 
 class LivraisonCreate(BaseModel):
     commande_id: str
-    livreur: str
+    livreur: str = ""
     boutique_id: str
     adresse: str
     creneau: str
