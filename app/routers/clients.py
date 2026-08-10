@@ -6,9 +6,8 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.data.fixtures import PAIEMENTS_CLIENTS, PAIEMENTS_FOURNISSEURS
-from app.db_models.models import ClientDB, DetteDB
-from app.models.schemas import Client, PaiementClient, PaiementFournisseur, TiersType
+from app.db_models.models import ClientDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
+from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutPaiement, TiersType
 from app.models.write_schemas import ClientCreate, ClientUpdate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
@@ -87,14 +86,31 @@ def delete_client(
 
 
 @router.get("/paiements-clients", response_model=list[PaiementClient])
-def list_paiements_clients(boutique_id: str | None = None) -> list[PaiementClient]:
+def list_paiements_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[PaiementClientDB]:
+    query = db.query(PaiementClientDB)
     if boutique_id:
-        return [p for p in PAIEMENTS_CLIENTS if p.boutique_id == boutique_id]
-    return PAIEMENTS_CLIENTS
+        query = query.filter(PaiementClientDB.boutique_id == boutique_id)
+    return sorted(query.all(), key=lambda p: p.date, reverse=True)
 
 
 @router.get("/paiements-fournisseurs", response_model=list[PaiementFournisseur])
-def list_paiements_fournisseurs(boutique_id: str | None = None) -> list[PaiementFournisseur]:
+def list_paiements_fournisseurs(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[PaiementFournisseurDB]:
+    query = db.query(PaiementFournisseurDB)
     if boutique_id:
-        return [p for p in PAIEMENTS_FOURNISSEURS if p.boutique_id == boutique_id]
-    return PAIEMENTS_FOURNISSEURS
+        query = query.filter(PaiementFournisseurDB.boutique_id == boutique_id)
+    return sorted(query.all(), key=lambda p: p.date, reverse=True)
+
+
+@router.post("/paiements-fournisseurs/{paiement_id}/payer", response_model=PaiementFournisseur)
+def marquer_paiement_fournisseur_paye(
+    paiement_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementFournisseurDB:
+    p = db.get(PaiementFournisseurDB, paiement_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+    p.statut = StatutPaiement.paye
+    db.commit()
+    db.refresh(p)
+    return p

@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import DetteDB, RemboursementDB
-from app.models.schemas import Remboursement, StatutDette, TiersType
+from app.db_models.models import DetteDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB
+from app.models.schemas import Remboursement, StatutDette, StatutPaiement, TiersType
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 
 router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
@@ -100,5 +100,19 @@ def encaisser_remboursement(
 
     d.solde_restant -= payload.montant
     d.statut = StatutDette.soldee if d.solde_restant <= 0 else StatutDette.en_cours
+
+    if d.tiers_type == TiersType.client:
+        db.add(PaiementClientDB(
+            id=str(uuid.uuid4())[:8], client_nom=d.tiers_nom, reference="Dette — remboursement",
+            boutique_id=d.boutique_id, mode_paiement=payload.mode_paiement, date=date.today(),
+            montant=payload.montant, statut=StatutPaiement.encaisse,
+        ))
+    else:
+        db.add(PaiementFournisseurDB(
+            id=str(uuid.uuid4())[:8], fournisseur_nom=d.tiers_nom, reference="Dette — remboursement",
+            boutique_id=d.boutique_id, mode_paiement=payload.mode_paiement, date=date.today(),
+            montant=payload.montant, statut=StatutPaiement.paye,
+        ))
+
     db.commit()
     return _to_ligne(d)

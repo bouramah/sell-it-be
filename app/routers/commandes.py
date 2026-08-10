@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -9,9 +9,12 @@ from app.core.security import get_current_user
 from app.db_models.models import (
     CommandeClientDB,
     CommandeFournisseurDB,
+    FournisseurDB,
     LigneCommandeClientDB,
     LigneCommandeFournisseurDB,
     MouvementStockDB,
+    PaiementClientDB,
+    PaiementFournisseurDB,
     ProduitDB,
     StockBoutiqueDB,
 )
@@ -22,8 +25,10 @@ from app.models.schemas import (
     CommandeClientDetail,
     CommandeFournisseurDetail,
     LigneCommandeFournisseur,
+    ModePaiement,
     MotifMouvementStock,
     StatutCommandeFournisseur,
+    StatutPaiement,
 )
 from app.models.write_schemas import (
     CommandeClientCreate,
@@ -89,6 +94,14 @@ def create_commande_client(
         montant += a.quantite * prix
         db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a.produit_id, quantite=a.quantite, prix_unitaire=prix))
     c.montant = montant
+
+    if payload.mode_paiement != ModePaiement.credit_client:
+        statut_paiement = StatutPaiement.en_attente if payload.mode_paiement == ModePaiement.a_la_livraison else StatutPaiement.encaisse
+        db.add(PaiementClientDB(
+            id=str(uuid.uuid4())[:8], client_nom=c.client_nom, reference=f"#{c.id}", boutique_id=c.boutique_id,
+            mode_paiement=payload.mode_paiement, date=date.today(), montant=montant, statut=statut_paiement,
+        ))
+
     db.commit()
     return get_commande_client(c.id, db)
 
@@ -224,6 +237,12 @@ def receptionner_commande_fournisseur(
 
     if all(l.quantite_recue >= l.quantite for l in c.lignes):
         c.statut = StatutCommandeFournisseur.receptionnee
+        fournisseur = db.get(FournisseurDB, c.fournisseur_id)
+        db.add(PaiementFournisseurDB(
+            id=str(uuid.uuid4())[:8], fournisseur_nom=fournisseur.nom if fournisseur else c.fournisseur_id,
+            reference=f"#{c.id}", boutique_id=c.boutique_id, mode_paiement=ModePaiement.virement,
+            date=date.today(), montant=c.montant, statut=StatutPaiement.en_attente,
+        ))
     else:
         c.statut = StatutCommandeFournisseur.receptionnee_partielle
 
