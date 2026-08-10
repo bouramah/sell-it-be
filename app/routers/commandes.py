@@ -65,7 +65,7 @@ def get_commande_client(commande_id: str, db: Session = Depends(get_db)) -> Comm
     produits = _produits_by_id(db, {l.produit_id for l in c.lignes}) if c.lignes else {}
     return CommandeClientDetail(
         id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal,
-        mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut,
+        mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut, date_creation=c.date_creation,
         articles=[
             ArticleCommande(id=l.id, produit_id=l.produit_id, produit_nom=produits[l.produit_id].nom, quantite=l.quantite, prix_unitaire=l.prix_unitaire)
             for l in c.lignes
@@ -139,7 +139,7 @@ def get_commande_fournisseur(commande_id: str, db: Session = Depends(get_db)) ->
     produits = _produits_by_id(db, {l.produit_id for l in c.lignes}) if c.lignes else {}
     return CommandeFournisseurDetail(
         id=c.id, fournisseur_id=c.fournisseur_id, boutique_id=c.boutique_id,
-        date_attendue=c.date_attendue, montant=c.montant, statut=c.statut,
+        date_attendue=c.date_attendue, montant=c.montant, statut=c.statut, date_reception=c.date_reception,
         articles=[
             ArticleCommandeFournisseur(
                 id=l.id, produit_id=l.produit_id, produit_nom=produits[l.produit_id].nom,
@@ -237,6 +237,7 @@ def receptionner_commande_fournisseur(
 
     if all(l.quantite_recue >= l.quantite for l in c.lignes):
         c.statut = StatutCommandeFournisseur.receptionnee
+        c.date_reception = date.today()
         fournisseur = db.get(FournisseurDB, c.fournisseur_id)
         db.add(PaiementFournisseurDB(
             id=str(uuid.uuid4())[:8], fournisseur_nom=fournisseur.nom if fournisseur else c.fournisseur_id,

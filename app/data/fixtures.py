@@ -6,7 +6,6 @@ from app.models.schemas import (
     Caisse,
     Client,
     CommandeClient,
-    CompteResultatBoutique,
     Depense,
     Dette,
     EcartInventaire,
@@ -231,14 +230,14 @@ MOUVEMENTS_CAISSE: list[MouvementCaisse] = [
 # --- Commandes ----------------------------------------------------------------
 
 COMMANDES_CLIENTS: list[CommandeClient] = [
-    CommandeClient(id="CMD-1042", client_nom="Aissatou Barry", boutique_id="lansanaya", canal="mobile_client", mode_paiement="mobile_money", montant=340000, statut=StatutCommandeClient.en_preparation),
-    CommandeClient(id="CMD-1041", client_nom="Mamadou Diallo", boutique_id="madina", canal="boutique", mode_paiement="credit_client", montant=120000, statut=StatutCommandeClient.confirmee),
-    CommandeClient(id="CMD-1040", client_nom="Kadiatou Sylla", boutique_id="matam", canal="web", mode_paiement="mobile_money", montant=890000, statut=StatutCommandeClient.livree),
-    CommandeClient(id="CMD-1039", client_nom="Ousmane Bangoura", boutique_id="kaloum", canal="mobile_client", mode_paiement="a_la_livraison", montant=65000, statut=StatutCommandeClient.en_livraison),
-    CommandeClient(id="CMD-1038", client_nom="Fanta Camara", boutique_id="kankan", canal="mobile_client", mode_paiement="mobile_money", montant=210000, statut=StatutCommandeClient.annulee),
-    CommandeClient(id="CMD-1037", client_nom="Thierno Baldé", boutique_id="lansanaya", canal="boutique", mode_paiement="especes", montant=48000, statut=StatutCommandeClient.livree),
-    CommandeClient(id="CMD-1036", client_nom="Hawa Keita", boutique_id="madina", canal="web", mode_paiement="mobile_money", montant=155000, statut=StatutCommandeClient.en_attente),
-    CommandeClient(id="CMD-1035", client_nom="Sékou Touré", boutique_id="matam", canal="mobile_client", mode_paiement="credit_client", montant=1240000, statut=StatutCommandeClient.confirmee),
+    CommandeClient(id="CMD-1042", client_nom="Aissatou Barry", boutique_id="lansanaya", canal="mobile_client", mode_paiement="mobile_money", montant=340000, statut=StatutCommandeClient.en_preparation, date_creation=datetime(2026, 8, 10, 9, 20)),
+    CommandeClient(id="CMD-1041", client_nom="Mamadou Diallo", boutique_id="madina", canal="boutique", mode_paiement="credit_client", montant=120000, statut=StatutCommandeClient.confirmee, date_creation=datetime(2026, 8, 9, 14, 10)),
+    CommandeClient(id="CMD-1040", client_nom="Kadiatou Sylla", boutique_id="matam", canal="web", mode_paiement="mobile_money", montant=890000, statut=StatutCommandeClient.livree, date_creation=datetime(2026, 8, 7, 11, 5)),
+    CommandeClient(id="CMD-1039", client_nom="Ousmane Bangoura", boutique_id="kaloum", canal="mobile_client", mode_paiement="a_la_livraison", montant=65000, statut=StatutCommandeClient.en_livraison, date_creation=datetime(2026, 8, 10, 8, 45)),
+    CommandeClient(id="CMD-1038", client_nom="Fanta Camara", boutique_id="kankan", canal="mobile_client", mode_paiement="mobile_money", montant=210000, statut=StatutCommandeClient.annulee, date_creation=datetime(2026, 8, 6, 16, 30)),
+    CommandeClient(id="CMD-1037", client_nom="Thierno Baldé", boutique_id="lansanaya", canal="boutique", mode_paiement="especes", montant=48000, statut=StatutCommandeClient.livree, date_creation=datetime(2026, 8, 5, 10, 0)),
+    CommandeClient(id="CMD-1036", client_nom="Hawa Keita", boutique_id="madina", canal="web", mode_paiement="mobile_money", montant=155000, statut=StatutCommandeClient.en_attente, date_creation=datetime(2026, 8, 10, 7, 55)),
+    CommandeClient(id="CMD-1035", client_nom="Sékou Touré", boutique_id="matam", canal="mobile_client", mode_paiement="credit_client", montant=1240000, statut=StatutCommandeClient.confirmee, date_creation=datetime(2026, 8, 4, 13, 15)),
 ]
 
 COMMANDES_FOURNISSEURS: list[LigneCommandeFournisseur] = [
@@ -296,16 +295,6 @@ TRANSFERTS: list[TransfertStock] = [
     TransfertStock(id="TR-204", produit_id="huile-vegetale", boutique_source_id="madina", boutique_destination_id="kankan", quantite=30, demandeur="M. Diallo (gérante)", statut=StatutTransfert.demande),
     TransfertStock(id="TR-205", produit_id="televiseur", boutique_source_id="matam", boutique_destination_id="lansanaya", quantite=2, demandeur="Siège", statut=StatutTransfert.en_transit),
     TransfertStock(id="TR-206", produit_id="sucre-poudre", boutique_source_id="lansanaya", boutique_destination_id="kaloum", quantite=50, demandeur="A. Camara (gérant)", statut=StatutTransfert.recu),
-]
-
-# --- Comptabilité ------------------------------------------------------------------
-
-COMPTES_RESULTAT: list[CompteResultatBoutique] = [
-    CompteResultatBoutique(boutique_id="lansanaya", chiffre_affaires=128400000, achats=78200000, depenses=14100000, marge_nette=36100000),
-    CompteResultatBoutique(boutique_id="madina", chiffre_affaires=146200000, achats=92500000, depenses=18900000, marge_nette=34800000),
-    CompteResultatBoutique(boutique_id="matam", chiffre_affaires=81300000, achats=54800000, depenses=9600000, marge_nette=16900000),
-    CompteResultatBoutique(boutique_id="kaloum", chiffre_affaires=38700000, achats=26900000, depenses=6400000, marge_nette=5400000),
-    CompteResultatBoutique(boutique_id="kankan", chiffre_affaires=18000000, achats=14200000, depenses=9200000, marge_nette=-1400000),
 ]
 
 # --- Promotions & tarifs ------------------------------------------------------------
@@ -430,12 +419,3 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
     ],
 }
 
-# --- Dashboard : chiffre d'affaires simulé par boutique (jour) ------------------------
-
-CA_JOUR = {
-    "lansanaya": 5210000,
-    "madina": 6830000,
-    "matam": 3940000,
-    "kaloum": 1640000,
-    "kankan": 800000,
-}

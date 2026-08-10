@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Column
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Column, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -200,6 +200,7 @@ class CommandeClientDB(Base):
     mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutCommandeClient] = mapped_column(Enum(StatutCommandeClient))
+    date_creation: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     lignes: Mapped[list["LigneCommandeClientDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
 
@@ -225,6 +226,7 @@ class CommandeFournisseurDB(Base):
     date_attendue: Mapped[date] = mapped_column(Date)
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutCommandeFournisseur] = mapped_column(Enum(StatutCommandeFournisseur))
+    date_reception: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     lignes: Mapped[list["LigneCommandeFournisseurDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
 

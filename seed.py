@@ -163,7 +163,7 @@ def seed() -> None:
 
         if db.query(CommandeClientDB).count() == 0:
             for c in COMMANDES_CLIENTS:
-                db.add(CommandeClientDB(id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal, mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut))
+                db.add(CommandeClientDB(id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal, mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut, date_creation=c.date_creation))
             print(f"Commandes clients : {len(COMMANDES_CLIENTS)} insérées")
         else:
             print("Commandes clients déjà présentes, ignoré")

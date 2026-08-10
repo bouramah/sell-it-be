@@ -304,6 +304,7 @@ class CommandeClient(BaseModel):
     mode_paiement: ModePaiement
     montant: float
     statut: StatutCommandeClient
+    date_creation: datetime
 
 
 class ArticleCommande(BaseModel):
@@ -325,6 +326,7 @@ class LigneCommandeFournisseur(BaseModel):
     date_attendue: date
     montant: float
     statut: StatutCommandeFournisseur
+    date_reception: date | None = None
 
 
 class ArticleCommandeFournisseur(ArticleCommande):
