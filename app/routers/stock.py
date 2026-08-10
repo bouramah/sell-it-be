@@ -1,11 +1,15 @@
+import uuid
+from datetime import datetime, timezone
+
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
-from app.data.fixtures import ECARTS_INVENTAIRE, MOUVEMENTS_STOCK, STOCKS
-from app.db_models.models import ProduitDB
+from app.core.security import get_current_user
+from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB
 from app.models.schemas import MotifMouvementStock, Secteur, StatutEcartInventaire
+from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
@@ -55,9 +59,10 @@ def _statut_stock(disponible: int, seuil: int) -> str:
 @router.get("", response_model=list[LigneStock])
 def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[LigneStock]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    rows = STOCKS
+    query = db.query(StockBoutiqueDB)
     if boutique_id:
-        rows = [s for s in rows if s.boutique_id == boutique_id]
+        query = query.filter(StockBoutiqueDB.boutique_id == boutique_id)
+    rows = query.all()
     if secteur:
         rows = [s for s in rows if produits_by_id[s.produit_id].secteur == secteur]
     return [
@@ -76,13 +81,90 @@ def list_stock(boutique_id: str | None = None, secteur: Secteur | None = None, d
     ]
 
 
+@router.post("", response_model=LigneStock, status_code=201)
+def create_ligne_stock(
+    payload: StockLigneCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LigneStock:
+    produit = db.get(ProduitDB, payload.produit_id)
+    if not produit:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    existing = db.get(StockBoutiqueDB, (payload.boutique_id, payload.produit_id))
+    if existing:
+        raise HTTPException(status_code=409, detail="Ce produit est déjà en stock dans cette boutique")
+    s = StockBoutiqueDB(
+        boutique_id=payload.boutique_id,
+        produit_id=payload.produit_id,
+        quantite_disponible=payload.quantite_disponible,
+        quantite_reservee=payload.quantite_reservee,
+        seuil_alerte=payload.seuil_alerte,
+        derniere_mouvement=datetime.now(timezone.utc),
+    )
+    db.add(s)
+    db.commit()
+    return LigneStock(
+        boutique_id=s.boutique_id,
+        produit_id=s.produit_id,
+        produit_nom=produit.nom,
+        secteur=produit.secteur,
+        quantite_disponible=s.quantite_disponible,
+        quantite_reservee=s.quantite_reservee,
+        seuil_alerte=s.seuil_alerte,
+        statut=_statut_stock(s.quantite_disponible, s.seuil_alerte),
+        derniere_mouvement=s.derniere_mouvement.isoformat(),
+    )
+
+
+@router.put("/{boutique_id}/{produit_id}", response_model=LigneStock)
+def update_ligne_stock(
+    boutique_id: str,
+    produit_id: str,
+    payload: StockLigneUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LigneStock:
+    s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
+    if not s:
+        raise HTTPException(status_code=404, detail="Ligne de stock introuvable")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(s, field, value)
+    db.commit()
+    produit = db.get(ProduitDB, produit_id)
+    return LigneStock(
+        boutique_id=s.boutique_id,
+        produit_id=s.produit_id,
+        produit_nom=produit.nom,
+        secteur=produit.secteur,
+        quantite_disponible=s.quantite_disponible,
+        quantite_reservee=s.quantite_reservee,
+        seuil_alerte=s.seuil_alerte,
+        statut=_statut_stock(s.quantite_disponible, s.seuil_alerte),
+        derniere_mouvement=s.derniere_mouvement.isoformat(),
+    )
+
+
+@router.delete("/{boutique_id}/{produit_id}", status_code=204)
+def delete_ligne_stock(
+    boutique_id: str,
+    produit_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> None:
+    s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
+    if not s:
+        raise HTTPException(status_code=404, detail="Ligne de stock introuvable")
+    db.delete(s)
+    db.commit()
+
+
 @router.get("/mouvements", response_model=list[LigneMouvementStock])
 def list_mouvements(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneMouvementStock]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    rows = MOUVEMENTS_STOCK
+    query = db.query(MouvementStockDB)
     if boutique_id:
-        rows = [m for m in rows if m.boutique_id == boutique_id]
-    rows = sorted(rows, key=lambda m: m.horodatage, reverse=True)
+        query = query.filter(MouvementStockDB.boutique_id == boutique_id)
+    rows = sorted(query.all(), key=lambda m: m.horodatage, reverse=True)
     return [
         LigneMouvementStock(
             id=m.id,
@@ -98,12 +180,62 @@ def list_mouvements(boutique_id: str | None = None, db: Session = Depends(get_db
     ]
 
 
+@router.post("/mouvements", response_model=LigneMouvementStock, status_code=201)
+def create_mouvement(
+    payload: MouvementStockCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LigneMouvementStock:
+    produit = db.get(ProduitDB, payload.produit_id)
+    if not produit:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+
+    now = datetime.now(timezone.utc)
+    mouvement = MouvementStockDB(
+        id=str(uuid.uuid4())[:8],
+        horodatage=now,
+        produit_id=payload.produit_id,
+        boutique_id=payload.boutique_id,
+        motif=payload.motif,
+        operateur=payload.operateur,
+        quantite=payload.quantite,
+    )
+    db.add(mouvement)
+
+    ligne = db.get(StockBoutiqueDB, (payload.boutique_id, payload.produit_id))
+    if ligne:
+        ligne.quantite_disponible += payload.quantite
+        ligne.derniere_mouvement = now
+    else:
+        ligne = StockBoutiqueDB(
+            boutique_id=payload.boutique_id,
+            produit_id=payload.produit_id,
+            quantite_disponible=max(payload.quantite, 0),
+            quantite_reservee=0,
+            seuil_alerte=0,
+            derniere_mouvement=now,
+        )
+        db.add(ligne)
+
+    db.commit()
+    return LigneMouvementStock(
+        id=mouvement.id,
+        horodatage=mouvement.horodatage.isoformat(),
+        produit_id=mouvement.produit_id,
+        produit_nom=produit.nom,
+        boutique_id=mouvement.boutique_id,
+        motif=mouvement.motif,
+        operateur=mouvement.operateur,
+        quantite=mouvement.quantite,
+    )
+
+
 @router.get("/inventaire", response_model=list[LigneEcartInventaire])
 def list_inventaire(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneEcartInventaire]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    rows = ECARTS_INVENTAIRE
+    query = db.query(EcartInventaireDB)
     if boutique_id:
-        rows = [e for e in rows if e.boutique_id == boutique_id]
+        query = query.filter(EcartInventaireDB.boutique_id == boutique_id)
     return [
         LigneEcartInventaire(
             id=e.id,
@@ -115,5 +247,30 @@ def list_inventaire(boutique_id: str | None = None, db: Session = Depends(get_db
             ecart=e.reel - e.theorique,
             statut=e.statut,
         )
-        for e in rows
+        for e in query.all()
     ]
+
+
+@router.post("/inventaire", response_model=LigneEcartInventaire, status_code=201)
+def create_inventaire(
+    payload: EcartInventaireCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> LigneEcartInventaire:
+    produit = db.get(ProduitDB, payload.produit_id)
+    if not produit:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    statut = StatutEcartInventaire.conforme if payload.theorique == payload.reel else StatutEcartInventaire.a_investiguer
+    e = EcartInventaireDB(id=str(uuid.uuid4())[:8], statut=statut, **payload.model_dump())
+    db.add(e)
+    db.commit()
+    return LigneEcartInventaire(
+        id=e.id,
+        produit_id=e.produit_id,
+        produit_nom=produit.nom,
+        boutique_id=e.boutique_id,
+        theorique=e.theorique,
+        reel=e.reel,
+        ecart=e.reel - e.theorique,
+        statut=e.statut,
+    )

@@ -2,7 +2,23 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from app.models.schemas import Role, Secteur, StatutBoutique
+from app.models.schemas import (
+    CanalCommande,
+    MotifMouvementStock,
+    ModePaiement,
+    Role,
+    Secteur,
+    SegmentClient,
+    StatutBoutique,
+    StatutCaisse,
+    StatutCommandeClient,
+    StatutCommandeFournisseur,
+    StatutDette,
+    StatutEcartInventaire,
+    StatutTransfert,
+    TiersType,
+    TypeMouvementCaisse,
+)
 
 
 class BoutiqueCreate(BaseModel):
@@ -67,6 +83,141 @@ class ProduitUpdate(BaseModel):
     unite: str | None = None
     code_barres: str | None = None
     date_peremption: date | None = None
+
+
+class FournisseurCreate(BaseModel):
+    nom: str
+    secteur: Secteur
+    conditions_paiement: str
+    contact: str
+
+
+class FournisseurUpdate(BaseModel):
+    nom: str | None = None
+    secteur: Secteur | None = None
+    conditions_paiement: str | None = None
+    contact: str | None = None
+
+
+class ClientCreate(BaseModel):
+    nom: str
+    contact: str
+    boutique_id: str
+    segment: SegmentClient = SegmentClient.nouveau
+    credit_autorise: bool = False
+
+
+class ClientUpdate(BaseModel):
+    nom: str | None = None
+    contact: str | None = None
+    boutique_id: str | None = None
+    segment: SegmentClient | None = None
+    credit_autorise: bool | None = None
+
+
+class StockLigneCreate(BaseModel):
+    boutique_id: str
+    produit_id: str
+    quantite_disponible: int = 0
+    quantite_reservee: int = 0
+    seuil_alerte: int = 0
+
+
+class StockLigneUpdate(BaseModel):
+    quantite_disponible: int | None = None
+    quantite_reservee: int | None = None
+    seuil_alerte: int | None = None
+
+
+class MouvementStockCreate(BaseModel):
+    produit_id: str
+    boutique_id: str
+    motif: MotifMouvementStock
+    operateur: str
+    quantite: int  # signé : positif = entrée, négatif = sortie
+
+
+class EcartInventaireCreate(BaseModel):
+    produit_id: str
+    boutique_id: str
+    theorique: int
+    reel: int
+
+
+class EcartInventaireUpdate(BaseModel):
+    statut: StatutEcartInventaire
+
+
+class CaisseCreate(BaseModel):
+    boutique_id: str
+    libelle: str
+    fond_initial: float
+    operateur: str
+
+
+class MouvementCaisseCreate(BaseModel):
+    caisse_id: str
+    type: TypeMouvementCaisse
+    motif: str
+    operateur: str
+    montant: float  # positif, le signe est dérivé du type
+
+
+class CaisseFermeture(BaseModel):
+    solde_reel: float
+
+
+class CommandeClientCreate(BaseModel):
+    client_nom: str
+    boutique_id: str
+    canal: CanalCommande
+    mode_paiement: ModePaiement
+    montant: float
+    statut: StatutCommandeClient = StatutCommandeClient.en_attente
+
+
+class CommandeClientUpdate(BaseModel):
+    statut: StatutCommandeClient | None = None
+
+
+class CommandeFournisseurCreate(BaseModel):
+    fournisseur_id: str
+    boutique_id: str
+    date_attendue: date
+    montant: float
+    statut: StatutCommandeFournisseur = StatutCommandeFournisseur.brouillon
+
+
+class CommandeFournisseurUpdate(BaseModel):
+    statut: StatutCommandeFournisseur | None = None
+    date_attendue: date | None = None
+    montant: float | None = None
+
+
+class DetteCreate(BaseModel):
+    tiers_type: TiersType
+    tiers_nom: str
+    boutique_id: str
+    montant_initial: float
+    echeance: date
+
+
+class RemboursementCreate(BaseModel):
+    montant: float
+    mode_paiement: ModePaiement
+    operateur: str
+
+
+class TransfertCreate(BaseModel):
+    produit_id: str
+    boutique_source_id: str
+    boutique_destination_id: str
+    quantite: int
+    demandeur: str
+
+
+class TransfertStatutUpdate(BaseModel):
+    statut: StatutTransfert
 
 
 class ReferentielCreate(BaseModel):

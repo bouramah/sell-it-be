@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
 from app.core.database import get_db
-from app.data.fixtures import CA_JOUR, DETTES, STOCKS
-from app.db_models.models import BoutiqueDB
-from app.models.schemas import StatutBoutique, TiersType
+from app.data.fixtures import CA_JOUR
+from app.db_models.models import BoutiqueDB, DetteDB, StockBoutiqueDB, TransfertStockDB
+from app.models.schemas import StatutBoutique, StatutTransfert, TiersType
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
 
@@ -43,11 +43,14 @@ class DashboardConsolide(BaseModel):
 
 @router.get("", response_model=DashboardConsolide)
 def get_dashboard(db: Session = Depends(get_db)) -> DashboardConsolide:
-    stock_alerte = [s for s in STOCKS if s.quantite_disponible <= s.seuil_alerte]
+    all_stock = db.query(StockBoutiqueDB).all()
+    stock_alerte = [s for s in all_stock if s.quantite_disponible <= s.seuil_alerte]
     boutiques_avec_alerte = {s.boutique_id for s in stock_alerte}
 
-    dettes_clients = [d for d in DETTES if d.tiers_type == TiersType.client]
+    dettes_clients = db.query(DetteDB).filter(DetteDB.tiers_type == TiersType.client).all()
     total_dettes = sum(d.solde_restant for d in dettes_clients)
+
+    transferts_en_transit = db.query(TransfertStockDB).filter(TransfertStockDB.statut == StatutTransfert.en_transit).count()
 
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.statut == StatutBoutique.active).all()
     comparatif = []
@@ -73,7 +76,7 @@ def get_dashboard(db: Session = Depends(get_db)) -> DashboardConsolide:
         dettes_clients_en_cours=total_dettes,
         produits_en_alerte_stock=len(stock_alerte),
         boutiques_concernees_alerte=len(boutiques_avec_alerte),
-        transferts_en_transit=3,
+        transferts_en_transit=transferts_en_transit,
         comparatif_boutiques=comparatif,
         alertes=[
             AlerteReseau(titre="Rupture de stock imminente", description="Riz local 25kg — Madina, moins de 6 unités restantes"),

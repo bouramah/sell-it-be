@@ -1,10 +1,26 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, Float, ForeignKey, String, Table, Column
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.schemas import Role, Secteur, StatutBoutique
+from app.models.schemas import (
+    CanalCommande,
+    MotifMouvementStock,
+    ModePaiement,
+    Role,
+    Secteur,
+    SegmentClient,
+    StatutBoutique,
+    StatutCaisse,
+    StatutCommandeClient,
+    StatutCommandeFournisseur,
+    StatutDette,
+    StatutEcartInventaire,
+    StatutTransfert,
+    TiersType,
+    TypeMouvementCaisse,
+)
 
 utilisateur_boutiques = Table(
     "utilisateur_boutiques",
@@ -72,6 +88,7 @@ class ProduitDB(Base):
     unite: Mapped[str] = mapped_column(String(40))
     code_barres: Mapped[str] = mapped_column(String(40), unique=True)
     date_peremption: Mapped[date | None] = mapped_column(Date, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class ReferentielDB(Base):
@@ -86,3 +103,148 @@ class ReferentielDB(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     categorie: Mapped[str] = mapped_column(String(60), index=True)
     nom: Mapped[str] = mapped_column(String(160))
+
+
+class FournisseurDB(Base):
+    __tablename__ = "fournisseurs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(160))
+    secteur: Mapped[Secteur] = mapped_column(Enum(Secteur))
+    conditions_paiement: Mapped[str] = mapped_column(String(200))
+    contact: Mapped[str] = mapped_column(String(60))
+
+
+class ClientDB(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(160))
+    contact: Mapped[str] = mapped_column(String(60))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    segment: Mapped[SegmentClient] = mapped_column(Enum(SegmentClient))
+    credit_autorise: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class StockBoutiqueDB(Base):
+    __tablename__ = "stock_boutiques"
+
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id", ondelete="CASCADE"), primary_key=True)
+    quantite_disponible: Mapped[int] = mapped_column(Integer, default=0)
+    quantite_reservee: Mapped[int] = mapped_column(Integer, default=0)
+    seuil_alerte: Mapped[int] = mapped_column(Integer, default=0)
+    derniere_mouvement: Mapped[datetime] = mapped_column(DateTime)
+
+
+class MouvementStockDB(Base):
+    __tablename__ = "mouvements_stock"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    horodatage: Mapped[datetime] = mapped_column(DateTime)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    motif: Mapped[MotifMouvementStock] = mapped_column(Enum(MotifMouvementStock))
+    operateur: Mapped[str] = mapped_column(String(120))
+    quantite: Mapped[int] = mapped_column(Integer)
+
+
+class EcartInventaireDB(Base):
+    __tablename__ = "ecarts_inventaire"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    theorique: Mapped[int] = mapped_column(Integer)
+    reel: Mapped[int] = mapped_column(Integer)
+    statut: Mapped[StatutEcartInventaire] = mapped_column(Enum(StatutEcartInventaire))
+
+
+class CaisseDB(Base):
+    __tablename__ = "caisses"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    libelle: Mapped[str] = mapped_column(String(80))
+    statut: Mapped[StatutCaisse] = mapped_column(Enum(StatutCaisse))
+    fond_initial: Mapped[float] = mapped_column(Float)
+    solde_theorique: Mapped[float] = mapped_column(Float)
+    solde_reel: Mapped[float] = mapped_column(Float)
+    operateur: Mapped[str] = mapped_column(String(120))
+
+
+class MouvementCaisseDB(Base):
+    __tablename__ = "mouvements_caisse"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    horodatage: Mapped[datetime] = mapped_column(DateTime)
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    caisse_id: Mapped[str] = mapped_column(String(40), ForeignKey("caisses.id"))
+    caisse_libelle: Mapped[str] = mapped_column(String(80))
+    type: Mapped[TypeMouvementCaisse] = mapped_column(Enum(TypeMouvementCaisse))
+    motif: Mapped[str] = mapped_column(String(160))
+    operateur: Mapped[str] = mapped_column(String(120))
+    montant: Mapped[float] = mapped_column(Float)
+
+
+class CommandeClientDB(Base):
+    __tablename__ = "commandes_clients"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    client_nom: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    canal: Mapped[CanalCommande] = mapped_column(Enum(CanalCommande))
+    mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
+    montant: Mapped[float] = mapped_column(Float)
+    statut: Mapped[StatutCommandeClient] = mapped_column(Enum(StatutCommandeClient))
+
+
+class CommandeFournisseurDB(Base):
+    __tablename__ = "commandes_fournisseurs"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    fournisseur_id: Mapped[str] = mapped_column(String(40), ForeignKey("fournisseurs.id"))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    date_attendue: Mapped[date] = mapped_column(Date)
+    montant: Mapped[float] = mapped_column(Float)
+    statut: Mapped[StatutCommandeFournisseur] = mapped_column(Enum(StatutCommandeFournisseur))
+
+
+class DetteDB(Base):
+    __tablename__ = "dettes"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    tiers_type: Mapped[TiersType] = mapped_column(Enum(TiersType))
+    tiers_nom: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    montant_initial: Mapped[float] = mapped_column(Float)
+    solde_restant: Mapped[float] = mapped_column(Float)
+    echeance: Mapped[date] = mapped_column(Date)
+    statut: Mapped[StatutDette] = mapped_column(Enum(StatutDette))
+
+    remboursements: Mapped[list["RemboursementDB"]] = relationship(back_populates="dette", cascade="all, delete-orphan")
+
+
+class RemboursementDB(Base):
+    __tablename__ = "remboursements"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    dette_id: Mapped[str] = mapped_column(String(40), ForeignKey("dettes.id", ondelete="CASCADE"))
+    montant: Mapped[float] = mapped_column(Float)
+    mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
+    date: Mapped[date] = mapped_column(Date)
+    operateur: Mapped[str] = mapped_column(String(120))
+
+    dette: Mapped["DetteDB"] = relationship(back_populates="remboursements")
+
+
+class TransfertStockDB(Base):
+    __tablename__ = "transferts_stock"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    boutique_source_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    boutique_destination_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    quantite: Mapped[int] = mapped_column(Integer)
+    demandeur: Mapped[str] = mapped_column(String(160))
+    statut: Mapped[StatutTransfert] = mapped_column(Enum(StatutTransfert))

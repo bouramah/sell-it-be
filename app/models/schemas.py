@@ -233,6 +233,7 @@ class Produit(BaseModel):
     unite: str
     code_barres: str
     date_peremption: date | None = None
+    image_url: str | None = None
 
 
 class StockBoutique(BaseModel):

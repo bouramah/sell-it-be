@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.data.fixtures import FOURNISSEURS
-from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB
+from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB
 from app.models.schemas import Boutique, Fournisseur, Secteur, StatutBoutique
-from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate
+from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate, FournisseurCreate, FournisseurUpdate
 
 router = APIRouter(prefix="/api/v1", tags=["reseau"])
 
@@ -116,7 +115,51 @@ def delete_boutique(
 
 
 @router.get("/fournisseurs", response_model=list[Fournisseur])
-def list_fournisseurs(secteur: Secteur | None = None) -> list[Fournisseur]:
+def list_fournisseurs(secteur: Secteur | None = None, db: Session = Depends(get_db)) -> list[FournisseurDB]:
+    query = db.query(FournisseurDB)
     if secteur:
-        return [f for f in FOURNISSEURS if f.secteur == secteur]
-    return FOURNISSEURS
+        query = query.filter(FournisseurDB.secteur == secteur)
+    return query.all()
+
+
+@router.post("/fournisseurs", response_model=Fournisseur, status_code=201)
+def create_fournisseur(
+    payload: FournisseurCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> FournisseurDB:
+    f = FournisseurDB(id=str(uuid.uuid4())[:8], **payload.model_dump())
+    db.add(f)
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@router.put("/fournisseurs/{fournisseur_id}", response_model=Fournisseur)
+def update_fournisseur(
+    fournisseur_id: str,
+    payload: FournisseurUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> FournisseurDB:
+    f = db.get(FournisseurDB, fournisseur_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="Fournisseur introuvable")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(f, field, value)
+    db.commit()
+    db.refresh(f)
+    return f
+
+
+@router.delete("/fournisseurs/{fournisseur_id}", status_code=204)
+def delete_fournisseur(
+    fournisseur_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> None:
+    f = db.get(FournisseurDB, fournisseur_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="Fournisseur introuvable")
+    db.delete(f)
+    db.commit()
