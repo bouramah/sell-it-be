@@ -32,6 +32,8 @@ class BoutiqueCreate(BaseModel):
     responsable: str
     statut: StatutBoutique = StatutBoutique.en_creation
     telephone: str
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class BoutiqueUpdate(BaseModel):
@@ -44,6 +46,8 @@ class BoutiqueUpdate(BaseModel):
     responsable: str | None = None
     statut: StatutBoutique | None = None
     telephone: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class UtilisateurCreate(BaseModel):
@@ -106,6 +110,9 @@ class ClientCreate(BaseModel):
     boutique_id: str
     segment: SegmentClient = SegmentClient.nouveau
     credit_autorise: bool = False
+    quartier: str | None = None
+    commune: str | None = None
+    ville: str | None = None
 
 
 class ClientUpdate(BaseModel):
@@ -114,6 +121,9 @@ class ClientUpdate(BaseModel):
     boutique_id: str | None = None
     segment: SegmentClient | None = None
     credit_autorise: bool | None = None
+    quartier: str | None = None
+    commune: str | None = None
+    ville: str | None = None
 
 
 class StockLigneCreate(BaseModel):
@@ -273,6 +283,24 @@ class DepenseCreate(BaseModel):
     auteur: str
     date: date
     montant: float
+
+
+class PaiementClientCreate(BaseModel):
+    client_nom: str
+    commande_id: str | None = None
+    boutique_id: str
+    mode_paiement: ModePaiement
+    montant: float
+    date_paiement: date | None = None
+
+
+class PaiementFournisseurCreate(BaseModel):
+    fournisseur_nom: str
+    commande_id: str | None = None
+    boutique_id: str
+    mode_paiement: ModePaiement
+    montant: float
+    date_paiement: date | None = None
 
 
 class PromotionCreate(BaseModel):

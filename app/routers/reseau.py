@@ -24,6 +24,8 @@ def _to_schema(b: BoutiqueDB) -> Boutique:
         responsable=b.responsable,
         statut=b.statut,
         telephone=b.telephone,
+        latitude=b.latitude,
+        longitude=b.longitude,
     )
 
 
@@ -70,6 +72,8 @@ def create_boutique(
         responsable=payload.responsable,
         statut=payload.statut,
         telephone=payload.telephone,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
     )
     b.secteurs = [BoutiqueSecteurDB(boutique_id=boutique_id, secteur=s) for s in payload.secteurs]
     db.add(b)

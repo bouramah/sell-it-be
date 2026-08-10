@@ -46,6 +46,8 @@ class BoutiqueDB(Base):
     responsable: Mapped[str] = mapped_column(String(120))
     statut: Mapped[StatutBoutique] = mapped_column(Enum(StatutBoutique))
     telephone: Mapped[str] = mapped_column(String(40))
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     secteurs: Mapped[list["BoutiqueSecteurDB"]] = relationship(
         back_populates="boutique", cascade="all, delete-orphan"
@@ -92,7 +94,21 @@ class ProduitDB(Base):
     unite: Mapped[str] = mapped_column(String(40))
     code_barres: Mapped[str] = mapped_column(String(40), unique=True)
     date_peremption: Mapped[date | None] = mapped_column(Date, nullable=True)
-    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    images: Mapped[list["ProduitImageDB"]] = relationship(
+        back_populates="produit", cascade="all, delete-orphan", order_by="ProduitImageDB.position"
+    )
+
+
+class ProduitImageDB(Base):
+    __tablename__ = "produit_images"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id", ondelete="CASCADE"))
+    url: Mapped[str] = mapped_column(String(500))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    produit: Mapped["ProduitDB"] = relationship(back_populates="images")
 
 
 class ReferentielDB(Base):
@@ -124,6 +140,9 @@ class ClientDB(Base):
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     segment: Mapped[SegmentClient] = mapped_column(Enum(SegmentClient))
     credit_autorise: Mapped[bool] = mapped_column(Boolean, default=False)
+    quartier: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    commune: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    ville: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class StockBoutiqueDB(Base):
@@ -292,7 +311,7 @@ class LivraisonDB(Base):
     adresse: Mapped[str] = mapped_column(String(255))
     creneau: Mapped[str] = mapped_column(String(80))
     statut: Mapped[StatutLivraison] = mapped_column(Enum(StatutLivraison))
-    preuve_disponible: Mapped[bool] = mapped_column(Boolean, default=False)
+    preuve_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class DepenseDB(Base):

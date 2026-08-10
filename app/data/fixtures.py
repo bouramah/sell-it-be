@@ -251,10 +251,10 @@ COMMANDES_FOURNISSEURS: list[LigneCommandeFournisseur] = [
 # --- Livraisons -----------------------------------------------------------------
 
 LIVRAISONS: list[Livraison] = [
-    Livraison(id="liv-1042", commande_id="CMD-1042", livreur="Ousmane Barry", boutique_id="lansanaya", adresse="Lansanaya, Ratoma", creneau="Aujourd'hui, 14h-18h", statut=StatutLivraison.en_cours, preuve_disponible=False),
-    Livraison(id="liv-1040", commande_id="CMD-1040", livreur="Sécurité Express", boutique_id="matam", adresse="Matam centre", creneau="Livrée hier", statut=StatutLivraison.livree, preuve_disponible=True),
-    Livraison(id="liv-1039", commande_id="CMD-1039", livreur="Mamadi Touré", boutique_id="kaloum", adresse="Kaloum, rue KA-025", creneau="Aujourd'hui, 10h-13h", statut=StatutLivraison.preparee, preuve_disponible=False),
-    Livraison(id="liv-1035", commande_id="CMD-1035", livreur="Sécurité Express", boutique_id="matam", adresse="Matoto, Conakry", creneau="Hier, 16h-18h", statut=StatutLivraison.echec, preuve_disponible=True),
+    Livraison(id="liv-1042", commande_id="CMD-1042", livreur="Ousmane Barry", boutique_id="lansanaya", adresse="Lansanaya, Ratoma", creneau="Aujourd'hui, 14h-18h", statut=StatutLivraison.en_cours, preuve_url=None),
+    Livraison(id="liv-1040", commande_id="CMD-1040", livreur="Sécurité Express", boutique_id="matam", adresse="Matam centre", creneau="Livrée hier", statut=StatutLivraison.livree, preuve_url=None),
+    Livraison(id="liv-1039", commande_id="CMD-1039", livreur="Mamadi Touré", boutique_id="kaloum", adresse="Kaloum, rue KA-025", creneau="Aujourd'hui, 10h-13h", statut=StatutLivraison.preparee, preuve_url=None),
+    Livraison(id="liv-1035", commande_id="CMD-1035", livreur="Sécurité Express", boutique_id="matam", adresse="Matoto, Conakry", creneau="Hier, 16h-18h", statut=StatutLivraison.echec, preuve_url=None),
 ]
 
 # --- Dépenses -------------------------------------------------------------------

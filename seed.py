@@ -210,7 +210,7 @@ def seed() -> None:
             for l in LIVRAISONS:
                 db.add(LivraisonDB(
                     id=l.id, commande_id=l.commande_id, livreur=l.livreur, boutique_id=l.boutique_id,
-                    adresse=l.adresse, creneau=l.creneau, statut=l.statut, preuve_disponible=l.preuve_disponible,
+                    adresse=l.adresse, creneau=l.creneau, statut=l.statut, preuve_url=l.preuve_url,
                 ))
             print(f"Livraisons : {len(LIVRAISONS)} insérées")
         else:

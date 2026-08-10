@@ -161,6 +161,8 @@ class Boutique(BaseModel):
     responsable: str
     statut: StatutBoutique
     telephone: str
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class Fournisseur(BaseModel):
@@ -197,6 +199,9 @@ class Client(BaseModel):
     segment: SegmentClient
     credit_autorise: bool
     solde_dette: float
+    quartier: str | None = None
+    commune: str | None = None
+    ville: str | None = None
 
 
 class PaiementClient(BaseModel):
@@ -224,6 +229,12 @@ class PaiementFournisseur(BaseModel):
 
 # --- Produits & stock --------------------------------------------------------
 
+class ProduitImage(BaseModel):
+    id: str
+    url: str
+    position: int
+
+
 class Produit(BaseModel):
     id: str
     nom: str
@@ -233,7 +244,7 @@ class Produit(BaseModel):
     unite: str
     code_barres: str
     date_peremption: date | None = None
-    image_url: str | None = None
+    images: list[ProduitImage] = []
 
 
 class StockBoutique(BaseModel):
@@ -347,7 +358,7 @@ class Livraison(BaseModel):
     adresse: str
     creneau: str
     statut: StatutLivraison
-    preuve_disponible: bool
+    preuve_url: str | None = None
 
 
 # --- Dépenses -------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import func
@@ -7,9 +8,9 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import ClientDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
+from app.db_models.models import ClientDB, CommandeClientDB, CommandeFournisseurDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
 from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutPaiement, TiersType
-from app.models.write_schemas import ClientCreate, ClientUpdate
+from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementClientCreate, PaiementFournisseurCreate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
 
@@ -42,6 +43,9 @@ def _to_schema(c: ClientDB, db: Session) -> Client:
         segment=c.segment,
         credit_autorise=c.credit_autorise,
         solde_dette=_solde_dette(db, c.nom),
+        quartier=c.quartier,
+        commune=c.commune,
+        ville=c.ville,
     )
 
 
@@ -110,6 +114,71 @@ def list_paiements_fournisseurs(boutique_id: str | None = None, db: Session = De
     if boutique_id:
         query = query.filter(PaiementFournisseurDB.boutique_id == boutique_id)
     return sorted(query.all(), key=lambda p: p.date, reverse=True)
+
+
+def _deja_paye(db: Session, model, reference: str) -> float:
+    total = db.query(func.coalesce(func.sum(model.montant), 0.0)).filter(model.reference == reference).scalar()
+    return float(total or 0.0)
+
+
+@router.post("/paiements-clients", response_model=PaiementClient, status_code=201)
+def create_paiement_client(
+    payload: PaiementClientCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementClientDB:
+    statut = StatutPaiement.encaisse
+    reference = "Paiement direct"
+    if payload.commande_id:
+        commande = db.get(CommandeClientDB, payload.commande_id)
+        if not commande:
+            raise HTTPException(status_code=404, detail="Commande introuvable")
+        reference = f"#{payload.commande_id}"
+        restant = commande.montant - _deja_paye(db, PaiementClientDB, reference)
+        if payload.montant <= 0:
+            raise HTTPException(status_code=400, detail="Le montant doit être positif")
+        if payload.montant > restant + 0.01:
+            raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
+        statut = StatutPaiement.encaisse if payload.montant >= restant - 0.01 else StatutPaiement.partiel
+
+    p = PaiementClientDB(
+        id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, reference=reference, boutique_id=payload.boutique_id,
+        mode_paiement=payload.mode_paiement, date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@router.post("/paiements-fournisseurs", response_model=PaiementFournisseur, status_code=201)
+def create_paiement_fournisseur(
+    payload: PaiementFournisseurCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementFournisseurDB:
+    statut = StatutPaiement.paye
+    reference = "Paiement direct"
+    if payload.commande_id:
+        commande = db.get(CommandeFournisseurDB, payload.commande_id)
+        if not commande:
+            raise HTTPException(status_code=404, detail="Commande introuvable")
+        reference = f"#{payload.commande_id}"
+        restant = commande.montant - _deja_paye(db, PaiementFournisseurDB, reference)
+        if payload.montant <= 0:
+            raise HTTPException(status_code=400, detail="Le montant doit être positif")
+        if payload.montant > restant + 0.01:
+            raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
+        statut = StatutPaiement.paye if payload.montant >= restant - 0.01 else StatutPaiement.partiel
+
+    p = PaiementFournisseurDB(
+        id=str(uuid.uuid4())[:8], fournisseur_nom=payload.fournisseur_nom, reference=reference, boutique_id=payload.boutique_id,
+        mode_paiement=payload.mode_paiement, date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
 
 
 @router.post("/paiements-fournisseurs/{paiement_id}/payer", response_model=PaiementFournisseur)
