@@ -135,7 +135,7 @@ class MouvementStockCreate(BaseModel):
     produit_id: str
     boutique_id: str
     motif: MotifMouvementStock
-    operateur: str
+    operateur: str = ""
     quantite: int  # signé : positif = entrée, négatif = sortie
 
 
