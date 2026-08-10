@@ -1,9 +1,10 @@
 import uuid
+from pathlib import Path
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import ClientDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
@@ -11,6 +12,16 @@ from app.models.schemas import Client, PaiementClient, PaiementFournisseur, Stat
 from app.models.write_schemas import ClientCreate, ClientUpdate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
+
+UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "paiements"
+ALLOWED_DOCUMENT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
+
+
+def _delete_document_file(document_url: str) -> None:
+    filename = document_url.rsplit("/", 1)[-1]
+    path = UPLOADS_DIR / filename
+    if path.exists():
+        path.unlink()
 
 
 def _solde_dette(db: Session, client_nom: str) -> float:
@@ -113,4 +124,50 @@ def marquer_paiement_fournisseur_paye(
     p.statut = StatutPaiement.paye
     db.commit()
     db.refresh(p)
+    return p
+
+
+@router.post("/paiements-fournisseurs/{paiement_id}/document", response_model=PaiementFournisseur)
+def uploader_document_paiement_fournisseur(
+    paiement_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementFournisseurDB:
+    p = db.get(PaiementFournisseurDB, paiement_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+
+    ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
+    if not ext:
+        raise HTTPException(status_code=400, detail="Format non supporté (jpeg, png, webp, pdf uniquement)")
+
+    if p.document_url:
+        _delete_document_file(p.document_url)
+
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{paiement_id}-{uuid.uuid4().hex[:8]}{ext}"
+    with open(UPLOADS_DIR / filename, "wb") as f:
+        f.write(file.file.read())
+
+    p.document_url = f"/uploads/paiements/{filename}"
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@router.delete("/paiements-fournisseurs/{paiement_id}/document", response_model=PaiementFournisseur)
+def supprimer_document_paiement_fournisseur(
+    paiement_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementFournisseurDB:
+    p = db.get(PaiementFournisseurDB, paiement_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+    if p.document_url:
+        _delete_document_file(p.document_url)
+        p.document_url = None
+        db.commit()
+        db.refresh(p)
     return p

@@ -220,6 +220,7 @@ class PaiementFournisseur(BaseModel):
     date: date
     montant: float
     statut: StatutPaiement
+    document_url: str | None = None
 
 
 # --- Produits & stock --------------------------------------------------------

@@ -334,3 +334,4 @@ class PaiementFournisseurDB(Base):
     date: Mapped[date] = mapped_column(Date)
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
+    document_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
