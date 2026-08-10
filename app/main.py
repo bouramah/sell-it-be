@@ -13,6 +13,7 @@ from app.routers import (
     dashboard,
     depenses,
     dettes,
+    documents,
     ia,
     livraisons,
     parametres,
@@ -53,6 +54,7 @@ app.include_router(commandes.router)
 app.include_router(livraisons.router)
 app.include_router(depenses.router)
 app.include_router(dettes.router)
+app.include_router(documents.router)
 app.include_router(transferts.router)
 app.include_router(comptabilite.router)
 app.include_router(promotions.router)
