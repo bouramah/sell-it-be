@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import DEFAULT_PASSWORD, get_current_user, hash_password
-from app.data.fixtures import PERMISSIONS
-from app.db_models.models import BoutiqueDB, UtilisateurDB
-from app.models.schemas import Role, Utilisateur
-from app.models.write_schemas import UtilisateurCreate, UtilisateurUpdate
+from app.db_models.models import BoutiqueDB, PermissionDB, UtilisateurDB
+from app.models.schemas import PermissionLigne, Role, Utilisateur
+from app.models.write_schemas import PermissionUpdate, UtilisateurCreate, UtilisateurUpdate
 
 router = APIRouter(prefix="/api/v1", tags=["utilisateurs"])
 
@@ -101,6 +100,27 @@ def delete_utilisateur(
     db.commit()
 
 
-@router.get("/permissions")
-def get_permissions() -> list[dict]:
-    return PERMISSIONS
+@router.get("/permissions", response_model=list[PermissionLigne])
+def get_permissions(db: Session = Depends(get_db)) -> list[PermissionLigne]:
+    rows = db.query(PermissionDB).order_by(PermissionDB.ordre).all()
+    lignes: dict[str, dict[Role, str]] = {}
+    for r in rows:
+        lignes.setdefault(r.module_action, {})[r.role] = r.droit
+    return [PermissionLigne(module_action=module_action, droits=droits) for module_action, droits in lignes.items()]
+
+
+@router.put("/permissions", response_model=PermissionLigne)
+def update_permission(
+    payload: PermissionUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PermissionLigne:
+    row = db.get(PermissionDB, (payload.module_action, payload.role))
+    if not row:
+        raise HTTPException(status_code=404, detail="Permission introuvable")
+    row.droit = payload.droit
+    db.commit()
+
+    rows = db.query(PermissionDB).filter(PermissionDB.module_action == payload.module_action).all()
+    droits = {r.role: r.droit for r in rows}
+    return PermissionLigne(module_action=payload.module_action, droits=droits)

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.models.schemas import (
     CanalCommande,
+    DroitAcces,
     MotifMouvementStock,
     ModePaiement,
     Role,
@@ -318,6 +319,12 @@ class PromotionCreate(BaseModel):
 
 class PromotionStatutUpdate(BaseModel):
     statut: StatutPromotion
+
+
+class PermissionUpdate(BaseModel):
+    module_action: str
+    role: Role
+    droit: DroitAcces
 
 
 class ReferentielCreate(BaseModel):

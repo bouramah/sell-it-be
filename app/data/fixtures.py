@@ -125,18 +125,8 @@ UTILISATEURS: list[Utilisateur] = [
     Utilisateur(id="usr-bah-s", nom="Bah", prenom="Souleymane", contact="621998877", role=Role.vendeur, boutique_ids=["kaloum"], statut="inactif", derniere_connexion=datetime(2026, 7, 7, 9, 47)),
 ]
 
-PERMISSIONS: list[dict] = [
-    {"module_action": "Consulter le stock de sa boutique", "droits": {Role.vendeur: "complet", Role.caissier: "complet", Role.gerant: "complet", Role.responsable_achats: "complet", Role.administrateur: "complet"}},
-    {"module_action": "Consulter le stock des autres boutiques", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "aucun", Role.responsable_achats: "complet", Role.administrateur: "complet"}},
-    {"module_action": "Enregistrer une vente directe (caisse)", "droits": {Role.vendeur: "complet", Role.caissier: "complet", Role.gerant: "complet", Role.responsable_achats: "aucun", Role.administrateur: "complet"}},
-    {"module_action": "Ouvrir / fermer une caisse", "droits": {Role.vendeur: "aucun", Role.caissier: "complet", Role.gerant: "complet", Role.responsable_achats: "aucun", Role.administrateur: "complet"}},
-    {"module_action": "Créer une commande fournisseur", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "partiel", Role.responsable_achats: "partiel", Role.administrateur: "complet"}},
-    {"module_action": "Initier un transfert de stock", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "partiel", Role.responsable_achats: "partiel", Role.administrateur: "complet"}},
-    {"module_action": "Valider les dépenses au-delà d'un seuil", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "aucun", Role.responsable_achats: "complet", Role.administrateur: "complet"}},
-    {"module_action": "Consulter le dashboard consolidé siège", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "aucun", Role.responsable_achats: "complet", Role.administrateur: "complet"}},
-    {"module_action": "Gérer les droits utilisateurs", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "aucun", Role.responsable_achats: "aucun", Role.administrateur: "complet"}},
-    {"module_action": "Créer / fermer une boutique", "droits": {Role.vendeur: "aucun", Role.caissier: "aucun", Role.gerant: "aucun", Role.responsable_achats: "aucun", Role.administrateur: "complet"}},
-]
+# Les permissions par rôle vivent désormais en base (table `permissions`, voir la migration
+# b9ce75de0497) pour rester modifiables depuis Paramètres sans déploiement.
 
 # --- Clients & paiements --------------------------------------------------------
 

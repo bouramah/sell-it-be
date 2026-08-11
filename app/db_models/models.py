@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 from app.models.schemas import (
     CanalCommande,
+    DroitAcces,
     MotifMouvementStock,
     ModePaiement,
     OriginePromotion,
@@ -368,6 +369,15 @@ class PaiementFournisseurDB(Base):
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
     document_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class PermissionDB(Base):
+    __tablename__ = "permissions"
+
+    module_action: Mapped[str] = mapped_column(String(160), primary_key=True)
+    role: Mapped[Role] = mapped_column(Enum(Role), primary_key=True)
+    droit: Mapped[DroitAcces] = mapped_column(Enum(DroitAcces))
+    ordre: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class PromotionDB(Base):
