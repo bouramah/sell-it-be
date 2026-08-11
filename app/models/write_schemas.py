@@ -289,6 +289,7 @@ class PaiementClientCreate(BaseModel):
     client_nom: str
     commande_id: str | None = None
     boutique_id: str
+    caisse_id: str
     mode_paiement: ModePaiement
     montant: float
     date_paiement: date | None = None
@@ -298,9 +299,14 @@ class PaiementFournisseurCreate(BaseModel):
     fournisseur_nom: str
     commande_id: str | None = None
     boutique_id: str
+    caisse_id: str
     mode_paiement: ModePaiement
     montant: float
     date_paiement: date | None = None
+
+
+class PaiementCaisseInput(BaseModel):
+    caisse_id: str
 
 
 class PromotionCreate(BaseModel):

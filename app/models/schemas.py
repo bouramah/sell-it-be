@@ -209,6 +209,7 @@ class PaiementClient(BaseModel):
     client_nom: str
     reference: str  # commande liée ou "Dette — remboursement"
     boutique_id: str
+    caisse_id: str | None = None
     mode_paiement: ModePaiement
     date: date
     montant: float
@@ -220,6 +221,7 @@ class PaiementFournisseur(BaseModel):
     fournisseur_nom: str
     reference: str
     boutique_id: str
+    caisse_id: str | None = None
     mode_paiement: ModePaiement
     date: date
     montant: float

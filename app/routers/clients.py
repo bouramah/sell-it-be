@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import func
@@ -8,9 +8,19 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import BoutiqueDB, ClientDB, CommandeClientDB, CommandeFournisseurDB, DetteDB, PaiementClientDB, PaiementFournisseurDB
-from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutPaiement, TiersType
-from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementClientCreate, PaiementFournisseurCreate
+from app.db_models.models import (
+    BoutiqueDB,
+    CaisseDB,
+    ClientDB,
+    CommandeClientDB,
+    CommandeFournisseurDB,
+    DetteDB,
+    MouvementCaisseDB,
+    PaiementClientDB,
+    PaiementFournisseurDB,
+)
+from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutCaisse, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementCaisseInput, PaiementClientCreate, PaiementFournisseurCreate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
 
@@ -126,6 +136,27 @@ def _deja_paye(db: Session, model, reference: str) -> float:
     return float(total or 0.0)
 
 
+def _caisse_pour_mouvement(db: Session, caisse_id: str, boutique_id: str) -> CaisseDB:
+    caisse = db.get(CaisseDB, caisse_id)
+    if not caisse:
+        raise HTTPException(status_code=404, detail="Caisse introuvable")
+    if caisse.boutique_id != boutique_id:
+        raise HTTPException(status_code=400, detail="Cette caisse n'appartient pas à la boutique sélectionnée")
+    if caisse.statut != StatutCaisse.ouverte:
+        raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un paiement")
+    return caisse
+
+
+def _mouvement_caisse(db: Session, caisse: CaisseDB, type_mouvement: TypeMouvementCaisse, motif: str, operateur: str, montant: float) -> None:
+    signed_montant = montant if type_mouvement == TypeMouvementCaisse.encaissement else -montant
+    db.add(MouvementCaisseDB(
+        id=str(uuid.uuid4())[:8], horodatage=datetime.now(timezone.utc), boutique_id=caisse.boutique_id,
+        caisse_id=caisse.id, caisse_libelle=caisse.libelle, type=type_mouvement,
+        motif=motif, operateur=operateur, montant=signed_montant,
+    ))
+    caisse.solde_theorique += signed_montant
+
+
 @router.post("/paiements-clients", response_model=PaiementClient, status_code=201)
 def create_paiement_client(
     payload: PaiementClientCreate,
@@ -146,11 +177,20 @@ def create_paiement_client(
             raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
         statut = StatutPaiement.encaisse if payload.montant >= restant - 0.01 else StatutPaiement.partiel
 
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id)
+
     p = PaiementClientDB(
         id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, reference=reference, boutique_id=payload.boutique_id,
-        mode_paiement=payload.mode_paiement, date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
+        caisse_id=payload.caisse_id, mode_paiement=payload.mode_paiement,
+        date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
     )
     db.add(p)
+
+    _mouvement_caisse(
+        db, caisse, TypeMouvementCaisse.encaissement,
+        f"Paiement client — {payload.client_nom}", f"{current_user.prenom} {current_user.nom}", payload.montant,
+    )
+
     db.commit()
     db.refresh(p)
     return p
@@ -176,11 +216,47 @@ def create_paiement_fournisseur(
             raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
         statut = StatutPaiement.paye if payload.montant >= restant - 0.01 else StatutPaiement.partiel
 
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id)
+
     p = PaiementFournisseurDB(
         id=str(uuid.uuid4())[:8], fournisseur_nom=payload.fournisseur_nom, reference=reference, boutique_id=payload.boutique_id,
-        mode_paiement=payload.mode_paiement, date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
+        caisse_id=payload.caisse_id, mode_paiement=payload.mode_paiement,
+        date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
     )
     db.add(p)
+
+    _mouvement_caisse(
+        db, caisse, TypeMouvementCaisse.decaissement,
+        f"Paiement fournisseur — {payload.fournisseur_nom}", f"{current_user.prenom} {current_user.nom}", payload.montant,
+    )
+
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@router.post("/paiements-clients/{paiement_id}/encaisser", response_model=PaiementClient)
+def encaisser_paiement_client(
+    paiement_id: str,
+    payload: PaiementCaisseInput,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> PaiementClientDB:
+    p = db.get(PaiementClientDB, paiement_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paiement introuvable")
+    if p.statut in (StatutPaiement.encaisse, StatutPaiement.paye):
+        raise HTTPException(status_code=400, detail="Ce paiement est déjà encaissé")
+
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id)
+
+    _mouvement_caisse(
+        db, caisse, TypeMouvementCaisse.encaissement,
+        f"Paiement client — {p.client_nom}", f"{current_user.prenom} {current_user.nom}", p.montant,
+    )
+    p.statut = StatutPaiement.encaisse
+    p.caisse_id = payload.caisse_id
+
     db.commit()
     db.refresh(p)
     return p
@@ -189,13 +265,25 @@ def create_paiement_fournisseur(
 @router.post("/paiements-fournisseurs/{paiement_id}/payer", response_model=PaiementFournisseur)
 def marquer_paiement_fournisseur_paye(
     paiement_id: str,
+    payload: PaiementCaisseInput,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> PaiementFournisseurDB:
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    if p.statut == StatutPaiement.paye:
+        raise HTTPException(status_code=400, detail="Ce paiement est déjà réglé")
+
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id)
+
+    _mouvement_caisse(
+        db, caisse, TypeMouvementCaisse.decaissement,
+        f"Paiement fournisseur — {p.fournisseur_nom}", f"{current_user.prenom} {current_user.nom}", p.montant,
+    )
     p.statut = StatutPaiement.paye
+    p.caisse_id = payload.caisse_id
+
     db.commit()
     db.refresh(p)
     return p
