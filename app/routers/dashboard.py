@@ -236,6 +236,13 @@ class BoutiqueCarte(BaseModel):
     alertes_stock: int
 
 
+class PointSerieVentes(BaseModel):
+    horodatage: datetime
+    chiffre_affaires: float
+    nombre_commandes: int
+    encaissements: float
+
+
 class DashboardKpis(BaseModel):
     debut: datetime
     fin: datetime
@@ -244,6 +251,7 @@ class DashboardKpis(BaseModel):
     stock: KpiStock
     finance: KpiFinance
     boutiques: list[BoutiqueCarte]
+    serie_ventes: list[PointSerieVentes]
 
 
 @router.get("/kpis", response_model=DashboardKpis)
@@ -389,6 +397,33 @@ def get_dashboard_kpis(
         if scope is None or b.id in scope
     ]
 
+    # Bucketing horaire pour les périodes courtes (≤ 2 jours), quotidien sinon —
+    # pour que la courbe d'évolution du CA reste lisible aussi bien sur "dernière heure" que sur "31 jours".
+    par_heure = (fin - debut) <= timedelta(days=2)
+
+    def bucket_key(dt: datetime) -> datetime:
+        return dt.replace(minute=0, second=0, microsecond=0) if par_heure else datetime.combine(dt.date(), datetime.min.time())
+
+    buckets: dict[datetime, list[float]] = defaultdict(lambda: [0.0, 0, 0.0])
+    for c in commandes:
+        b = bucket_key(c.date_creation)
+        buckets[b][0] += c.montant
+        buckets[b][1] += 1
+    for m in mouvements_caisse:
+        if m.type == TypeMouvementCaisse.encaissement:
+            buckets[bucket_key(m.horodatage)][2] += m.montant
+
+    step = timedelta(hours=1) if par_heure else timedelta(days=1)
+    cursor = bucket_key(debut)
+    fin_bucket = bucket_key(fin)
+    serie_ventes: list[PointSerieVentes] = []
+    while cursor <= fin_bucket:
+        vals = buckets.get(cursor, [0.0, 0, 0.0])
+        serie_ventes.append(
+            PointSerieVentes(horodatage=cursor, chiffre_affaires=vals[0], nombre_commandes=int(vals[1]), encaissements=vals[2])
+        )
+        cursor += step
+
     return DashboardKpis(
         debut=debut,
         fin=fin,
@@ -397,4 +432,5 @@ def get_dashboard_kpis(
         stock=stock,
         finance=finance,
         boutiques=boutiques_carte,
+        serie_ventes=serie_ventes,
     )
