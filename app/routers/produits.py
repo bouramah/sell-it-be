@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.authorization import require_role
 from app.core.database import get_db
+from app.core.db_errors import commit_or_409
 from app.core.security import get_current_user
 from app.db_models.models import ProduitDB, ProduitImageDB, UtilisateurDB
 from app.models.schemas import Produit, ProduitImage, Role
@@ -99,7 +100,7 @@ def delete_produit(
     for img in p.images:
         _delete_image_file(img.url)
     db.delete(p)
-    db.commit()
+    commit_or_409(db, "Impossible de supprimer ce produit : il a du stock ou un historique de mouvements/commandes.")
 
 
 @router.post("/{produit_id}/images", response_model=Produit)

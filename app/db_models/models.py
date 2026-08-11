@@ -399,7 +399,8 @@ class JournalAuditDB(Base):
     horodatage: Mapped[datetime] = mapped_column(DateTime)
     action: Mapped[str] = mapped_column(String(255))
     auteur: Mapped[str] = mapped_column(String(160))
-    boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id"), nullable=True)
+    # SET NULL (pas CASCADE) : le journal est immuable et doit survivre à la suppression de la boutique référencée.
+    boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="SET NULL"), nullable=True)
 
 
 class ParametreSecuriteDB(Base):

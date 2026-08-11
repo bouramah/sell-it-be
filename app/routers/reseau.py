@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_admin
 from app.core.database import get_db
+from app.core.db_errors import commit_or_409
 from app.core.security import get_current_user
 from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB, UtilisateurDB
 from app.models.schemas import Boutique, Fournisseur, StatutBoutique
@@ -131,7 +132,7 @@ def delete_boutique(
     # boutique_id volontairement omis : la boutique référencée n'existera plus après ce commit.
     log_audit(db, f"Suppression boutique — {b.nom}", f"{current_user.prenom} {current_user.nom}")
     db.delete(b)
-    db.commit()
+    commit_or_409(db, "Impossible de supprimer cette boutique : des données (stock, commandes, caisses…) y sont encore rattachées.")
 
 
 @router.get("/fournisseurs", response_model=list[Fournisseur])
@@ -182,4 +183,4 @@ def delete_fournisseur(
     if not f:
         raise HTTPException(status_code=404, detail="Fournisseur introuvable")
     db.delete(f)
-    db.commit()
+    commit_or_409(db, "Impossible de supprimer ce fournisseur : des commandes y sont encore rattachées.")
