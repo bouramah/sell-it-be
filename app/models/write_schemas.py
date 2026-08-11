@@ -349,6 +349,16 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class MotDePasseOublieRequest(BaseModel):
+    contact: str
+
+
+class ReinitialisationMotDePasseRequest(BaseModel):
+    contact: str
+    code: str
+    nouveau_mot_de_passe: str
+
+
 class UtilisateurConnecte(BaseModel):
     id: str
     nom: str

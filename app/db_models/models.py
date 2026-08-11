@@ -410,3 +410,16 @@ class ParametreSecuriteDB(Base):
     label: Mapped[str] = mapped_column(String(200))
     actif: Mapped[bool] = mapped_column(Boolean, default=False)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OtpCodeDB(Base):
+    """Code à usage unique envoyé par SMS — réinitialisation de mot de passe
+    aujourd'hui, base réutilisable pour la 2FA (CDC §7.2) plus tard."""
+    __tablename__ = "otp_codes"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    contact: Mapped[str] = mapped_column(String(30))
+    code_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)

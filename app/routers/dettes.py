@@ -8,9 +8,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.authorization import apply_boutique_filter, assert_boutique_access
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import CaisseDB, DetteDB, MouvementCaisseDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB, UtilisateurDB
+from app.db_models.models import (
+    CaisseDB,
+    ClientDB,
+    DetteDB,
+    FournisseurDB,
+    MouvementCaisseDB,
+    PaiementClientDB,
+    PaiementFournisseurDB,
+    RemboursementDB,
+    UtilisateurDB,
+)
 from app.models.schemas import Remboursement, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import DetteCreate, RemboursementCreate
+from app.services.audit import log_audit
+from app.services.sms import get_sms_provider
 
 router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
 
@@ -147,5 +159,38 @@ def encaisser_remboursement(
             montant=payload.montant, statut=StatutPaiement.paye,
         ))
 
+    db.commit()
+    return _to_ligne(d)
+
+
+@router.post("/{dette_id}/rappel-sms", response_model=LigneDette)
+def envoyer_rappel_sms(
+    dette_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> LigneDette:
+    """Relance SMS à l'approche/dépassement de l'échéance (cf. CDC §6.4 :
+    "relances automatiques (SMS/WhatsApp/notification)")."""
+    d = db.get(DetteDB, dette_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Dette introuvable")
+    assert_boutique_access(current_user, d.boutique_id)
+
+    if d.tiers_type == TiersType.client:
+        tiers = db.query(ClientDB).filter(ClientDB.nom == d.tiers_nom).first()
+    else:
+        tiers = db.query(FournisseurDB).filter(FournisseurDB.nom == d.tiers_nom).first()
+    if not tiers or not tiers.contact:
+        raise HTTPException(status_code=404, detail="Aucun numéro de contact enregistré pour ce tiers")
+
+    montant = f"{d.solde_restant:,.0f}".replace(",", " ")
+    message = (
+        f"KFSTORE — Rappel : solde restant dû de {montant} GNF, "
+        f"échéance le {d.echeance.strftime('%d/%m/%Y')}. Merci de régulariser."
+    )
+    if not get_sms_provider().send(tiers.contact, message):
+        raise HTTPException(status_code=502, detail="Échec de l'envoi du SMS")
+
+    log_audit(db, f"Rappel SMS envoyé — {d.tiers_nom} ({montant} GNF)", f"{current_user.prenom} {current_user.nom}", d.boutique_id)
     db.commit()
     return _to_ligne(d)
