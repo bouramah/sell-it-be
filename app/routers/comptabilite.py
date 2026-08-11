@@ -2,13 +2,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
-from app.core.authorization import ROLES_PORTEE_RESEAU, require_role
+from app.core.authorization import a_portee_reseau, boutiques_autorisees, require_role
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import BoutiqueDB, CommandeClientDB, CommandeFournisseurDB, DepenseDB, UtilisateurDB
-from app.models.schemas import CompteResultatBoutique, StatutCommandeClient, StatutCommandeFournisseur
+from app.models.schemas import CompteResultatBoutique, Role, StatutCommandeClient, StatutCommandeFournisseur
 
 router = APIRouter(prefix="/api/v1/comptabilite", tags=["comptabilite"])
+
+# CDC 3.3 : le gérant consulte la comptabilité de sa boutique (vue scopée), responsable_achats/
+# administrateur ont la vue consolidée du réseau ; vendeur/caissier n'y ont pas accès.
+ROLES_COMPTABILITE = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 
 class ComptabiliteConsolidee(BaseModel):
@@ -24,9 +28,11 @@ def get_comptabilite(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ComptabiliteConsolidee:
-    # Comptabilité consolidée du réseau — réservée au siège (cf. CDC).
-    require_role(current_user, *ROLES_PORTEE_RESEAU)
-    boutiques = db.query(BoutiqueDB).all()
+    require_role(current_user, *ROLES_COMPTABILITE)
+    boutiques_q = db.query(BoutiqueDB)
+    if not a_portee_reseau(current_user):
+        boutiques_q = boutiques_q.filter(BoutiqueDB.id.in_(boutiques_autorisees(current_user)))
+    boutiques = boutiques_q.all()
 
     commandes_clients = db.query(CommandeClientDB).filter(CommandeClientDB.statut != StatutCommandeClient.annulee).all()
     commandes_fournisseurs = db.query(CommandeFournisseurDB).filter(

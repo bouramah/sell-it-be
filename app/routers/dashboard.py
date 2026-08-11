@@ -26,6 +26,7 @@ from app.db_models.models import (
 from app.models.schemas import (
     CanalCommande,
     ModePaiement,
+    Role,
     StatutBoutique,
     StatutCaisse,
     StatutCommandeClient,
@@ -35,6 +36,10 @@ from app.models.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+# CDC 3.3 : "Consulter le dashboard de sa boutique" — gérant, responsable achats, administrateur
+# uniquement. Vendeur/caissier n'ont pas accès au dashboard, même pour leur propre boutique.
+ROLES_DASHBOARD_BOUTIQUE = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 
 def _boutique_scope(current_user: UtilisateurDB, boutique_id: str | None) -> list[str] | None:
@@ -253,6 +258,7 @@ def get_dashboard_kpis(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DashboardKpis:
+    require_role(current_user, *ROLES_DASHBOARD_BOUTIQUE)
     scope = _boutique_scope(current_user, boutique_id)
     debut_date, fin_date = debut.date(), fin.date()
 

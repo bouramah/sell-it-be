@@ -4,14 +4,21 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import a_portee_reseau, boutiques_autorisees
+from app.core.authorization import a_portee_reseau, boutiques_autorisees, require_role
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import MouvementStockDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
-from app.models.schemas import MotifMouvementStock, StatutTransfert, TransfertStock
+from app.models.schemas import MotifMouvementStock, Role, StatutTransfert, TransfertStock
 from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate
 
 router = APIRouter(prefix="/api/v1/transferts", tags=["transferts"])
+
+# CDC 3.3 : "Initier un transfert" = demande par le gérant (l'administrateur ayant autorité
+# partout). "...✔ (validation)" par le responsable achats = fait passer la demande à
+# valide/en_transit. "Réceptionner un transfert" = vendeur ou gérant à la boutique destinataire.
+ROLES_TRANSFERT_DEMANDE = (Role.gerant, Role.administrateur)
+ROLES_TRANSFERT_VALIDATION = (Role.responsable_achats, Role.administrateur)
+ROLES_TRANSFERT_RECEPTION = (Role.vendeur, Role.gerant, Role.administrateur)
 
 
 def _assert_transfert_access(current_user: UtilisateurDB, boutique_source_id: str, boutique_destination_id: str) -> None:
@@ -49,6 +56,7 @@ def create_transfert(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> TransfertStockDB:
+    require_role(current_user, *ROLES_TRANSFERT_DEMANDE)
     _assert_transfert_access(current_user, payload.boutique_source_id, payload.boutique_destination_id)
     t = TransfertStockDB(id=str(uuid.uuid4())[:8], statut=StatutTransfert.demande, **payload.model_dump())
     db.add(t)
@@ -69,8 +77,12 @@ def update_statut(
         raise HTTPException(status_code=404, detail="Transfert introuvable")
     _assert_transfert_access(current_user, t.boutique_source_id, t.boutique_destination_id)
 
-    if payload.statut == StatutTransfert.recu and t.statut != StatutTransfert.recu:
-        _appliquer_reception(db, t)
+    if payload.statut == StatutTransfert.recu:
+        require_role(current_user, *ROLES_TRANSFERT_RECEPTION)
+        if t.statut != StatutTransfert.recu:
+            _appliquer_reception(db, t)
+    else:
+        require_role(current_user, *ROLES_TRANSFERT_VALIDATION)
 
     t.statut = payload.statut
     db.commit()

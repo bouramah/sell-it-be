@@ -46,6 +46,9 @@ from app.models.write_schemas import (
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
 
 ROLES_COMMANDE_FOURNISSEUR = (Role.gerant, Role.responsable_achats, Role.administrateur)
+# CDC 3.3 : la commande client est un acte de vente boutique — responsable_achats (achats/stock
+# réseau) en est explicitement exclu, contrairement à vendeur/caissier/gérant.
+ROLES_COMMANDE_CLIENT = (Role.vendeur, Role.caissier, Role.gerant, Role.administrateur)
 
 
 def _produits_by_id(db: Session, ids: set[str]) -> dict[str, ProduitDB]:
@@ -93,6 +96,7 @@ def create_commande_client(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeClientDetail:
+    require_role(current_user, *ROLES_COMMANDE_CLIENT)
     assert_boutique_access(current_user, payload.boutique_id)
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
@@ -139,6 +143,7 @@ def update_commande_client(
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    require_role(current_user, *ROLES_COMMANDE_CLIENT)
     assert_boutique_access(current_user, c.boutique_id)
 
     ancien_statut = c.statut

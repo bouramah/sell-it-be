@@ -9,7 +9,7 @@ from app.core.authorization import ROLES_PORTEE_RESEAU, apply_boutique_filter, a
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import CaisseDB, DepenseDB, MouvementCaisseDB, UtilisateurDB
-from app.models.schemas import Depense, StatutCaisse, StatutValidationDepense, TypeMouvementCaisse
+from app.models.schemas import Depense, Role, StatutCaisse, StatutValidationDepense, TypeMouvementCaisse
 from app.models.write_schemas import DepenseCreate
 from app.services.audit import log_audit
 
@@ -17,6 +17,9 @@ router = APIRouter(prefix="/api/v1/depenses", tags=["depenses"])
 
 # Au-delà de ce montant, une dépense doit être validée par le siège (double validation, cf. CDC anti-fraude).
 SEUIL_VALIDATION_SIEGE = 500_000
+
+# CDC 3.3 : "Enregistrer une dépense de boutique" = gérant (+ administrateur) seulement.
+ROLES_DEPENSE_CREATION = (Role.gerant, Role.administrateur)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "depenses"
 ALLOWED_DOCUMENT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
@@ -45,6 +48,7 @@ def create_depense(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
+    require_role(current_user, *ROLES_DEPENSE_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
     caisse = db.get(CaisseDB, payload.caisse_id)
     if not caisse:
