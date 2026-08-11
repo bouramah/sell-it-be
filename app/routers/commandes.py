@@ -17,6 +17,7 @@ from app.db_models.models import (
     PaiementFournisseurDB,
     ProduitDB,
     StockBoutiqueDB,
+    UtilisateurDB,
 )
 from app.models.schemas import (
     ArticleCommande,
@@ -104,6 +105,14 @@ def create_commande_client(
             mode_paiement=payload.mode_paiement, date=date.today(), montant=montant, statut=statut_paiement,
         ))
 
+    # Réserve le stock dès la prise de commande (quantité disponible inchangée, réservée augmentée) —
+    # tant qu'elle n'est pas annulée ou livrée. cf. CDC 3.4/6.3 : "quantité réservée (commandes en cours)".
+    if c.statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree):
+        for a in payload.articles:
+            stock = db.get(StockBoutiqueDB, (payload.boutique_id, a.produit_id))
+            if stock:
+                stock.quantite_reservee += a.quantite
+
     db.commit()
     return get_commande_client(c.id, db)
 
@@ -113,11 +122,14 @@ def update_commande_client(
     commande_id: str,
     payload: CommandeClientUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeClientDetail:
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+
+    ancien_statut = c.statut
+    etait_reservee = ancien_statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree)
 
     data = payload.model_dump(exclude_unset=True)
     articles = data.pop("articles", None)
@@ -130,6 +142,14 @@ def update_commande_client(
         if not articles:
             raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
         produits = _produits_by_id(db, {a["produit_id"] for a in articles})
+
+        # Libère la réservation liée aux anciennes lignes avant de les remplacer.
+        if etait_reservee:
+            for l in c.lignes:
+                stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
+                if stock:
+                    stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
+
         for l in list(c.lignes):
             db.delete(l)
         db.flush()
@@ -140,10 +160,38 @@ def update_commande_client(
             db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], prix_unitaire=prix))
         c.montant = montant
 
+        # Ré-applique la réservation avec les nouvelles quantités (la commande reste en_attente ici).
+        for a in articles:
+            stock = db.get(StockBoutiqueDB, (c.boutique_id, a["produit_id"]))
+            if stock:
+                stock.quantite_reservee += a["quantite"]
+
         paiement = db.query(PaiementClientDB).filter(PaiementClientDB.reference == f"#{c.id}").first()
         if paiement:
             paiement.montant = montant
             paiement.client_nom = c.client_nom
+
+    # Livraison : la marchandise quitte réellement le stock — motif obligatoire (cf. CDC 3.4).
+    if c.statut == StatutCommandeClient.livree and ancien_statut != StatutCommandeClient.livree:
+        now = datetime.now(timezone.utc)
+        for l in c.lignes:
+            stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
+            if stock:
+                stock.quantite_disponible -= l.quantite
+                if etait_reservee:
+                    stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
+                stock.derniere_mouvement = now
+            db.add(MouvementStockDB(
+                id=str(uuid.uuid4())[:8], horodatage=now, produit_id=l.produit_id, boutique_id=c.boutique_id,
+                motif=MotifMouvementStock.commande_client,
+                operateur=f"{current_user.prenom} {current_user.nom}", quantite=-l.quantite,
+            ))
+    # Annulation d'une commande encore en cours : libère la réservation, rien n'a physiquement bougé.
+    elif c.statut == StatutCommandeClient.annulee and etait_reservee and ancien_statut != StatutCommandeClient.annulee:
+        for l in c.lignes:
+            stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
+            if stock:
+                stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
 
     db.commit()
     return get_commande_client(commande_id, db)
