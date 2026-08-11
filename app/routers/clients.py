@@ -178,9 +178,10 @@ def create_paiement_client(
         statut = StatutPaiement.encaisse if payload.montant >= restant - 0.01 else StatutPaiement.partiel
 
     caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id)
+    client_nom = payload.client_nom.strip() or "Client de passage"
 
     p = PaiementClientDB(
-        id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, reference=reference, boutique_id=payload.boutique_id,
+        id=str(uuid.uuid4())[:8], client_nom=client_nom, reference=reference, boutique_id=payload.boutique_id,
         caisse_id=payload.caisse_id, mode_paiement=payload.mode_paiement,
         date=payload.date_paiement or date.today(), montant=payload.montant, statut=statut,
     )
@@ -188,7 +189,7 @@ def create_paiement_client(
 
     _mouvement_caisse(
         db, caisse, TypeMouvementCaisse.encaissement,
-        f"Paiement client — {payload.client_nom}", f"{current_user.prenom} {current_user.nom}", payload.montant,
+        f"Paiement client — {client_nom}", f"{current_user.prenom} {current_user.nom}", payload.montant,
     )
 
     db.commit()

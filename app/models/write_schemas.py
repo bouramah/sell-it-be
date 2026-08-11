@@ -287,7 +287,7 @@ class DepenseCreate(BaseModel):
 
 
 class PaiementClientCreate(BaseModel):
-    client_nom: str
+    client_nom: str = ""
     commande_id: str | None = None
     boutique_id: str
     caisse_id: str
