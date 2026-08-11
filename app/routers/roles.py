@@ -43,6 +43,7 @@ def create_role(
     ordre_max = db.query(RoleDB).count()
     role = RoleDB(id=payload.id, libelle=payload.libelle, portee=payload.portee, ordre=ordre_max, systeme=False)
     db.add(role)
+    db.flush()  # la ligne roles doit exister avant les inserts permissions (FK fk_permissions_role)
 
     # Nouvelle ligne "aucun" pour chaque action déjà connue de la matrice, pour que ce
     # nouveau rôle apparaisse immédiatement dans toutes les lignes existantes — cf. CDC
