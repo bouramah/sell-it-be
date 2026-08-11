@@ -466,6 +466,7 @@ class JournalAuditEntry(BaseModel):
 
 
 class ParametreSecurite(BaseModel):
+    id: str
     label: str
     actif: bool
 

@@ -8,6 +8,7 @@ from app.core.security import DEFAULT_PASSWORD, get_current_user, hash_password
 from app.db_models.models import BoutiqueDB, PermissionDB, UtilisateurDB
 from app.models.schemas import PermissionLigne, Role, Utilisateur
 from app.models.write_schemas import PermissionUpdate, UtilisateurCreate, UtilisateurUpdate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1", tags=["utilisateurs"])
 
@@ -40,7 +41,7 @@ def list_utilisateurs(role: Role | None = None, boutique_id: str | None = None, 
 def create_utilisateur(
     payload: UtilisateurCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Utilisateur:
     if db.query(UtilisateurDB).filter(UtilisateurDB.contact == payload.contact).first():
         raise HTTPException(status_code=409, detail="Un utilisateur avec ce contact existe déjà")
@@ -57,6 +58,7 @@ def create_utilisateur(
         boutiques=boutiques,
     )
     db.add(u)
+    log_audit(db, f"Création utilisateur — {payload.prenom} {payload.nom} ({payload.role.value})", f"{current_user.prenom} {current_user.nom}")
     db.commit()
     db.refresh(u)
     return _to_schema(u)
@@ -67,12 +69,13 @@ def update_utilisateur(
     utilisateur_id: str,
     payload: UtilisateurUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Utilisateur:
     u = db.get(UtilisateurDB, utilisateur_id)
     if not u:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
 
+    ancien_role, ancien_statut = u.role, u.statut
     data = payload.model_dump(exclude_unset=True, exclude={"mot_de_passe", "boutique_ids"})
     for field, value in data.items():
         setattr(u, field, value)
@@ -81,6 +84,12 @@ def update_utilisateur(
         u.mot_de_passe_hash = hash_password(payload.mot_de_passe)
     if payload.boutique_ids is not None:
         u.boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
+
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    if payload.role is not None and payload.role != ancien_role:
+        log_audit(db, f"Modification des droits — {u.prenom} {u.nom} passé en {payload.role.value}", auteur)
+    if payload.statut is not None and payload.statut != ancien_statut:
+        log_audit(db, f"Compte {'activé' if payload.statut == 'actif' else 'désactivé'} — {u.prenom} {u.nom}", auteur)
 
     db.commit()
     db.refresh(u)
@@ -91,11 +100,12 @@ def update_utilisateur(
 def delete_utilisateur(
     utilisateur_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
     u = db.get(UtilisateurDB, utilisateur_id)
     if not u:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    log_audit(db, f"Suppression utilisateur — {u.prenom} {u.nom}", f"{current_user.prenom} {current_user.nom}")
     db.delete(u)
     db.commit()
 
@@ -113,12 +123,17 @@ def get_permissions(db: Session = Depends(get_db)) -> list[PermissionLigne]:
 def update_permission(
     payload: PermissionUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PermissionLigne:
     row = db.get(PermissionDB, (payload.module_action, payload.role))
     if not row:
         raise HTTPException(status_code=404, detail="Permission introuvable")
     row.droit = payload.droit
+    log_audit(
+        db,
+        f"Matrice des droits — {payload.module_action} / {payload.role.value} → {payload.droit.value}",
+        f"{current_user.prenom} {current_user.nom}",
+    )
     db.commit()
 
     rows = db.query(PermissionDB).filter(PermissionDB.module_action == payload.module_action).all()

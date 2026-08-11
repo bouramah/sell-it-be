@@ -335,6 +335,10 @@ class ReferentielUpdate(BaseModel):
     nom: str
 
 
+class ParametreSecuriteUpdate(BaseModel):
+    actif: bool
+
+
 class LoginRequest(BaseModel):
     contact: str
     mot_de_passe: str

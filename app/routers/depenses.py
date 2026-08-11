@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import CaisseDB, DepenseDB, MouvementCaisseDB
+from app.db_models.models import CaisseDB, DepenseDB, MouvementCaisseDB, UtilisateurDB
 from app.models.schemas import Depense, StatutCaisse, StatutValidationDepense, TypeMouvementCaisse
 from app.models.write_schemas import DepenseCreate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1/depenses", tags=["depenses"])
 
@@ -77,7 +78,7 @@ def create_depense(
 def valider_depense(
     depense_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
     d = db.get(DepenseDB, depense_id)
     if not d:
@@ -85,6 +86,12 @@ def valider_depense(
     if d.statut_validation != StatutValidationDepense.en_attente:
         raise HTTPException(status_code=400, detail="Cette dépense n'est pas en attente de validation")
     d.statut_validation = StatutValidationDepense.validee_siege
+    log_audit(
+        db,
+        f"Dépense validée — {d.categorie} {d.montant:,.0f} GNF".replace(",", " "),
+        f"{current_user.prenom} {current_user.nom}",
+        d.boutique_id,
+    )
     db.commit()
     db.refresh(d)
     return d

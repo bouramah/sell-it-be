@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB
+from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB, UtilisateurDB
 from app.models.schemas import Boutique, Fournisseur, StatutBoutique
 from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate, FournisseurCreate, FournisseurUpdate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1", tags=["reseau"])
 
@@ -59,7 +60,7 @@ def get_boutique(boutique_id: str, db: Session = Depends(get_db)) -> Boutique:
 def create_boutique(
     payload: BoutiqueCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
     boutique_id = str(uuid.uuid4())[:8]
     b = BoutiqueDB(
@@ -77,6 +78,7 @@ def create_boutique(
     )
     b.secteurs = [BoutiqueSecteurDB(boutique_id=boutique_id, secteur=s) for s in payload.secteurs]
     db.add(b)
+    log_audit(db, f"Création boutique — {payload.nom}", f"{current_user.prenom} {current_user.nom}", boutique_id)
     db.commit()
     db.refresh(b)
     return _to_schema(b)
@@ -109,11 +111,13 @@ def update_boutique(
 def delete_boutique(
     boutique_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")
+    # boutique_id volontairement omis : la boutique référencée n'existera plus après ce commit.
+    log_audit(db, f"Suppression boutique — {b.nom}", f"{current_user.prenom} {current_user.nom}")
     db.delete(b)
     db.commit()
 

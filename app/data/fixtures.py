@@ -10,7 +10,6 @@ from app.models.schemas import (
     Dette,
     EcartInventaire,
     Fournisseur,
-    JournalAuditEntry,
     LigneCommandeFournisseur,
     Livraison,
     MotifMouvementStock,
@@ -18,7 +17,6 @@ from app.models.schemas import (
     MouvementStock,
     PaiementClient,
     PaiementFournisseur,
-    ParametreSecurite,
     Produit,
     Promotion,
     ReferentielItem,
@@ -348,24 +346,6 @@ CHATBOT_CONVERSATION_DEMO: list[dict] = [
 ]
 
 # --- Sécurité & audit ---------------------------------------------------------------
-
-JOURNAL_AUDIT: list[JournalAuditEntry] = [
-    JournalAuditEntry(id="aud-1", horodatage=datetime(2026, 8, 8, 11, 2), action="Modification des droits — S. Bah passé en lecture seule", auteur="Sékou Condé", boutique_id=None),
-    JournalAuditEntry(id="aud-2", horodatage=datetime(2026, 8, 8, 10, 40), action="Validation transfert de stock #TR-208", auteur="Mamadouba Keita", boutique_id=None),
-    JournalAuditEntry(id="aud-3", horodatage=datetime(2026, 8, 8, 9, 15), action="Écart de caisse signalé (45 000 GNF)", auteur="Mariama Diallo", boutique_id="kankan"),
-    JournalAuditEntry(id="aud-4", horodatage=datetime(2026, 8, 7, 18, 22), action="Dépense validée — loyer 1 200 000 GNF", auteur="Sékou Condé", boutique_id="kankan"),
-    JournalAuditEntry(id="aud-5", horodatage=datetime(2026, 8, 7, 15, 3), action="Nouvelle commande fournisseur #FR-318", auteur="Ibrahima Sow", boutique_id="madina"),
-    JournalAuditEntry(id="aud-6", horodatage=datetime(2026, 8, 7, 9, 47), action="Connexion échouée x3 — compte verrouillé", auteur="Souleymane Bah", boutique_id="kaloum"),
-    JournalAuditEntry(id="aud-7", horodatage=datetime(2026, 8, 5, 16, 10), action="Correction d'inventaire — écart +4 unités", auteur="Alpha Camara", boutique_id="matam"),
-]
-
-PARAMETRES_SECURITE: list[ParametreSecurite] = [
-    ParametreSecurite(label="Authentification à deux facteurs — comptes sensibles", actif=True),
-    ParametreSecurite(label="Verrouillage après 5 tentatives échouées", actif=True),
-    ParametreSecurite(label="Expiration de session après inactivité", actif=True),
-    ParametreSecurite(label="Double validation — dépenses & transferts significatifs", actif=True),
-    ParametreSecurite(label="Restriction par terminal — comptes siège", actif=False),
-]
 
 # --- Paramètres / référentiels -------------------------------------------------------
 

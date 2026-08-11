@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import CaisseDB, MouvementCaisseDB
+from app.db_models.models import CaisseDB, MouvementCaisseDB, UtilisateurDB
 from app.models.schemas import Caisse, StatutCaisse, TypeMouvementCaisse
 from app.models.write_schemas import CaisseCreate, CaisseFermeture, MouvementCaisseCreate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1/caisse", tags=["caisse"])
 
@@ -60,13 +61,21 @@ def fermer_caisse(
     caisse_id: str,
     payload: CaisseFermeture,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CaisseDB:
     c = db.get(CaisseDB, caisse_id)
     if not c:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
     c.solde_reel = payload.solde_reel
     c.statut = StatutCaisse.fermee if payload.solde_reel == c.solde_theorique else StatutCaisse.ecart_signale
+    if c.statut == StatutCaisse.ecart_signale:
+        ecart = abs(payload.solde_reel - c.solde_theorique)
+        log_audit(
+            db,
+            f"Écart de caisse signalé ({ecart:,.0f} GNF) — {c.libelle}".replace(",", " "),
+            f"{current_user.prenom} {current_user.nom}",
+            c.boutique_id,
+        )
     db.commit()
     db.refresh(c)
     return c

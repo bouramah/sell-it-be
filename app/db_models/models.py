@@ -390,3 +390,22 @@ class PromotionDB(Base):
     origine: Mapped[OriginePromotion] = mapped_column(Enum(OriginePromotion))
     impact_estime: Mapped[str] = mapped_column(String(255))
     statut: Mapped[StatutPromotion] = mapped_column(Enum(StatutPromotion))
+
+
+class JournalAuditDB(Base):
+    __tablename__ = "journal_audit"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    horodatage: Mapped[datetime] = mapped_column(DateTime)
+    action: Mapped[str] = mapped_column(String(255))
+    auteur: Mapped[str] = mapped_column(String(160))
+    boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id"), nullable=True)
+
+
+class ParametreSecuriteDB(Base):
+    __tablename__ = "parametres_securite"
+
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    label: Mapped[str] = mapped_column(String(200))
+    actif: Mapped[bool] = mapped_column(Boolean, default=False)
+    ordre: Mapped[int] = mapped_column(Integer, default=0)
