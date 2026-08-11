@@ -2,7 +2,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
+from app.core.authorization import require_role
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.data.fixtures import (
     ANOMALIES_REPORTING,
     CHATBOT_CONFIG,
@@ -10,10 +12,14 @@ from app.data.fixtures import (
     SUGGESTIONS_REAPPRO,
     SYNTHESE_REPORTING,
 )
-from app.db_models.models import ProduitDB
-from app.models.schemas import AnomalieReporting, ConversationMessage, Produit
+from app.db_models.models import ProduitDB, UtilisateurDB
+from app.models.schemas import AnomalieReporting, ConversationMessage, Produit, Role
 
 router = APIRouter(prefix="/api/v1/ia", tags=["ia"])
+
+# CDC 3.3 : "Accéder aux modules IA" — gérant (lecture), responsable achats, administrateur.
+# Vendeur/caissier n'y figurent pas.
+ROLES_IA = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 
 class SuggestionAvecProduit(BaseModel):
@@ -31,7 +37,13 @@ class ReportingIntelligent(BaseModel):
 
 
 @router.get("/catalogue", response_model=list[Produit])
-def catalogue_recherche(q: str | None = None, secteur: str | None = None, db: Session = Depends(get_db)) -> list[ProduitDB]:
+def catalogue_recherche(
+    q: str | None = None,
+    secteur: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ProduitDB]:
+    require_role(current_user, *ROLES_IA)
     query = db.query(ProduitDB)
     if secteur:
         query = query.filter(ProduitDB.secteur == secteur)
@@ -41,7 +53,11 @@ def catalogue_recherche(q: str | None = None, secteur: str | None = None, db: Se
 
 
 @router.get("/previsions", response_model=list[SuggestionAvecProduit])
-def previsions_demande(db: Session = Depends(get_db)) -> list[SuggestionAvecProduit]:
+def previsions_demande(
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[SuggestionAvecProduit]:
+    require_role(current_user, *ROLES_IA)
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
     return [
         SuggestionAvecProduit(
@@ -53,19 +69,23 @@ def previsions_demande(db: Session = Depends(get_db)) -> list[SuggestionAvecProd
             quantite_suggeree=s.quantite_suggeree,
         )
         for s in SUGGESTIONS_REAPPRO
+        if s.produit_id in produits_by_id
     ]
 
 
 @router.get("/reporting", response_model=ReportingIntelligent)
-def reporting_intelligent() -> ReportingIntelligent:
+def reporting_intelligent(current_user: UtilisateurDB = Depends(get_current_user)) -> ReportingIntelligent:
+    require_role(current_user, *ROLES_IA)
     return ReportingIntelligent(synthese=SYNTHESE_REPORTING, anomalies=ANOMALIES_REPORTING)
 
 
 @router.get("/chatbot/config")
-def chatbot_config() -> dict:
+def chatbot_config(current_user: UtilisateurDB = Depends(get_current_user)) -> dict:
+    require_role(current_user, *ROLES_IA)
     return CHATBOT_CONFIG
 
 
 @router.get("/chatbot/conversation-demo", response_model=list[ConversationMessage])
-def chatbot_conversation_demo() -> list[ConversationMessage]:
+def chatbot_conversation_demo(current_user: UtilisateurDB = Depends(get_current_user)) -> list[ConversationMessage]:
+    require_role(current_user, *ROLES_IA)
     return CHATBOT_CONVERSATION_DEMO

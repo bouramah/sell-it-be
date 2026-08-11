@@ -343,6 +343,7 @@ def uploader_document_paiement_fournisseur(
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    require_role(current_user, *ROLES_ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
@@ -372,6 +373,7 @@ def supprimer_document_paiement_fournisseur(
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    require_role(current_user, *ROLES_ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
     if p.document_url:
         _delete_document_file(p.document_url)

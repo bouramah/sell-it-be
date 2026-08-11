@@ -116,6 +116,7 @@ def uploader_justificatif(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
+    require_role(current_user, *ROLES_DEPENSE_CREATION)
     assert_boutique_access(current_user, d.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
@@ -145,6 +146,7 @@ def supprimer_justificatif(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
+    require_role(current_user, *ROLES_DEPENSE_CREATION)
     assert_boutique_access(current_user, d.boutique_id)
     if d.justificatif_url:
         _delete_justificatif_file(d.justificatif_url)
