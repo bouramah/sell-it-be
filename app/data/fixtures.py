@@ -56,6 +56,8 @@ BOUTIQUES: list[Boutique] = [
         responsable="Fatoumata Bah",
         statut=StatutBoutique.active,
         telephone="620 19 19 20",
+        latitude=9.6412,
+        longitude=-13.5784,
     ),
     Boutique(
         id="madina",
@@ -68,6 +70,8 @@ BOUTIQUES: list[Boutique] = [
         responsable="Ibrahima Sow",
         statut=StatutBoutique.active,
         telephone="622 11 22 33",
+        latitude=9.5279,
+        longitude=-13.6893,
     ),
     Boutique(
         id="matam",
@@ -80,6 +84,8 @@ BOUTIQUES: list[Boutique] = [
         responsable="Alpha Camara",
         statut=StatutBoutique.active,
         telephone="628 55 66 77",
+        latitude=9.5763,
+        longitude=-13.6187,
     ),
     Boutique(
         id="kaloum",
@@ -92,6 +98,8 @@ BOUTIQUES: list[Boutique] = [
         responsable="Aboubacar Diané",
         statut=StatutBoutique.active,
         telephone="620 77 88 99",
+        latitude=9.537,
+        longitude=-13.6785,
     ),
     Boutique(
         id="kankan",
@@ -104,6 +112,8 @@ BOUTIQUES: list[Boutique] = [
         responsable="Mariama Diallo",
         statut=StatutBoutique.en_creation,
         telephone="623 44 55 66",
+        latitude=10.3839,
+        longitude=-9.3057,
     ),
 ]
 
