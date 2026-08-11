@@ -4,18 +4,37 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import a_portee_reseau, boutiques_autorisees
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import MouvementStockDB, StockBoutiqueDB, TransfertStockDB
+from app.db_models.models import MouvementStockDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
 from app.models.schemas import MotifMouvementStock, StatutTransfert, TransfertStock
 from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate
 
 router = APIRouter(prefix="/api/v1/transferts", tags=["transferts"])
 
 
+def _assert_transfert_access(current_user: UtilisateurDB, boutique_source_id: str, boutique_destination_id: str) -> None:
+    if a_portee_reseau(current_user):
+        return
+    autorisees = boutiques_autorisees(current_user)
+    if boutique_source_id not in autorisees and boutique_destination_id not in autorisees:
+        raise HTTPException(status_code=403, detail="Vous n'avez pas accès à ce transfert")
+
+
 @router.get("", response_model=list[TransfertStock])
-def list_transferts(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[TransfertStockDB]:
+def list_transferts(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[TransfertStockDB]:
     query = db.query(TransfertStockDB)
+    if not a_portee_reseau(current_user):
+        autorisees = boutiques_autorisees(current_user)
+        query = query.filter(
+            (TransfertStockDB.boutique_source_id.in_(autorisees))
+            | (TransfertStockDB.boutique_destination_id.in_(autorisees))
+        )
     if boutique_id:
         query = query.filter(
             (TransfertStockDB.boutique_source_id == boutique_id)
@@ -28,8 +47,9 @@ def list_transferts(boutique_id: str | None = None, db: Session = Depends(get_db
 def create_transfert(
     payload: TransfertCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> TransfertStockDB:
+    _assert_transfert_access(current_user, payload.boutique_source_id, payload.boutique_destination_id)
     t = TransfertStockDB(id=str(uuid.uuid4())[:8], statut=StatutTransfert.demande, **payload.model_dump())
     db.add(t)
     db.commit()
@@ -42,11 +62,12 @@ def update_statut(
     transfert_id: str,
     payload: TransfertStatutUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> TransfertStockDB:
     t = db.get(TransfertStockDB, transfert_id)
     if not t:
         raise HTTPException(status_code=404, detail="Transfert introuvable")
+    _assert_transfert_access(current_user, t.boutique_source_id, t.boutique_destination_id)
 
     if payload.statut == StatutTransfert.recu and t.statut != StatutTransfert.recu:
         _appliquer_reception(db, t)

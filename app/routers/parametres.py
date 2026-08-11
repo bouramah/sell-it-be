@@ -3,10 +3,11 @@ import uuid
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import require_admin
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.data.fixtures import REFERENTIELS
-from app.db_models.models import ReferentielDB
+from app.db_models.models import ReferentielDB, UtilisateurDB
 from app.models.schemas import ReferentielItem
 from app.models.write_schemas import ReferentielCreate, ReferentielUpdate
 
@@ -40,8 +41,9 @@ def create_referentiel_item(
     categorie: str,
     payload: ReferentielCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ReferentielItem:
+    require_admin(current_user)
     item = ReferentielDB(id=str(uuid.uuid4())[:8], categorie=categorie, nom=payload.nom)
     db.add(item)
     db.commit()
@@ -55,8 +57,9 @@ def update_referentiel_item(
     item_id: str,
     payload: ReferentielUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ReferentielItem:
+    require_admin(current_user)
     item = db.query(ReferentielDB).filter(ReferentielDB.id == item_id, ReferentielDB.categorie == categorie).first()
     if not item:
         raise HTTPException(status_code=404, detail="Référentiel introuvable")
@@ -71,8 +74,9 @@ def delete_referentiel_item(
     categorie: str,
     item_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
+    require_admin(current_user)
     item = db.query(ReferentielDB).filter(ReferentielDB.id == item_id, ReferentielDB.categorie == categorie).first()
     if not item:
         raise HTTPException(status_code=404, detail="Référentiel introuvable")

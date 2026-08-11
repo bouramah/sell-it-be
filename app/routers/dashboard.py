@@ -5,7 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
+from app.core.authorization import ROLES_PORTEE_RESEAU, a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_role
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.db_models.models import (
     BoutiqueDB,
     CaisseDB,
@@ -19,6 +21,7 @@ from app.db_models.models import (
     ProduitDB,
     StockBoutiqueDB,
     TransfertStockDB,
+    UtilisateurDB,
 )
 from app.models.schemas import (
     CanalCommande,
@@ -32,6 +35,17 @@ from app.models.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+
+def _boutique_scope(current_user: UtilisateurDB, boutique_id: str | None) -> list[str] | None:
+    """Renvoie la liste des boutique_id à laquelle restreindre les requêtes du dashboard,
+    ou None si aucune restriction n'est nécessaire (portée réseau, aucun filtre demandé)."""
+    if boutique_id:
+        assert_boutique_access(current_user, boutique_id)
+        return [boutique_id]
+    if a_portee_reseau(current_user):
+        return None
+    return list(boutiques_autorisees(current_user))
 
 
 class LigneComparatifBoutique(BaseModel):
@@ -66,7 +80,12 @@ class DashboardConsolide(BaseModel):
 
 
 @router.get("", response_model=DashboardConsolide)
-def get_dashboard(db: Session = Depends(get_db)) -> DashboardConsolide:
+def get_dashboard(
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> DashboardConsolide:
+    # Dashboard consolidé réseau — réservé au siège (cf. CDC : "Consulter le dashboard consolidé siège").
+    require_role(current_user, *ROLES_PORTEE_RESEAU)
     today = date.today()
 
     all_stock = db.query(StockBoutiqueDB).all()
@@ -232,7 +251,9 @@ def get_dashboard_kpis(
     fin: datetime,
     boutique_id: str | None = None,
     db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DashboardKpis:
+    scope = _boutique_scope(current_user, boutique_id)
     debut_date, fin_date = debut.date(), fin.date()
 
     commandes_q = db.query(CommandeClientDB).filter(
@@ -240,8 +261,8 @@ def get_dashboard_kpis(
         CommandeClientDB.date_creation >= debut,
         CommandeClientDB.date_creation <= fin,
     )
-    if boutique_id:
-        commandes_q = commandes_q.filter(CommandeClientDB.boutique_id == boutique_id)
+    if scope is not None:
+        commandes_q = commandes_q.filter(CommandeClientDB.boutique_id.in_(scope))
     commandes = commandes_q.all()
 
     chiffre_affaires = sum(c.montant for c in commandes)
@@ -304,8 +325,8 @@ def get_dashboard_kpis(
         MouvementCaisseDB.horodatage >= debut,
         MouvementCaisseDB.horodatage <= fin,
     )
-    if boutique_id:
-        mouvements_caisse_q = mouvements_caisse_q.filter(MouvementCaisseDB.boutique_id == boutique_id)
+    if scope is not None:
+        mouvements_caisse_q = mouvements_caisse_q.filter(MouvementCaisseDB.boutique_id.in_(scope))
     mouvements_caisse = mouvements_caisse_q.all()
     encaissements = sum(m.montant for m in mouvements_caisse if m.type == TypeMouvementCaisse.encaissement)
     decaissements = sum(-m.montant for m in mouvements_caisse if m.type == TypeMouvementCaisse.decaissement)
@@ -315,16 +336,16 @@ def get_dashboard_kpis(
         MouvementStockDB.horodatage >= debut,
         MouvementStockDB.horodatage <= fin,
     )
-    if boutique_id:
-        mouvements_stock_q = mouvements_stock_q.filter(MouvementStockDB.boutique_id == boutique_id)
+    if scope is not None:
+        mouvements_stock_q = mouvements_stock_q.filter(MouvementStockDB.boutique_id.in_(scope))
     mouvements_stock = mouvements_stock_q.all()
     entrees = sum(m.quantite for m in mouvements_stock if m.quantite > 0)
     sorties = sum(-m.quantite for m in mouvements_stock if m.quantite < 0)
     stock = KpiStock(entrees=entrees, sorties=sorties)
 
     depenses_q = db.query(DepenseDB).filter(DepenseDB.date >= debut_date, DepenseDB.date <= fin_date)
-    if boutique_id:
-        depenses_q = depenses_q.filter(DepenseDB.boutique_id == boutique_id)
+    if scope is not None:
+        depenses_q = depenses_q.filter(DepenseDB.boutique_id.in_(scope))
     depenses_total = sum(d.montant for d in depenses_q.all())
 
     achats_q = db.query(CommandeFournisseurDB).filter(
@@ -332,13 +353,13 @@ def get_dashboard_kpis(
         CommandeFournisseurDB.date_reception >= debut_date,
         CommandeFournisseurDB.date_reception <= fin_date,
     )
-    if boutique_id:
-        achats_q = achats_q.filter(CommandeFournisseurDB.boutique_id == boutique_id)
+    if scope is not None:
+        achats_q = achats_q.filter(CommandeFournisseurDB.boutique_id.in_(scope))
     achats_total = sum(c.montant for c in achats_q.all())
 
     dettes_q = db.query(DetteDB).filter(DetteDB.tiers_type == TiersType.client)
-    if boutique_id:
-        dettes_q = dettes_q.filter(DetteDB.boutique_id == boutique_id)
+    if scope is not None:
+        dettes_q = dettes_q.filter(DetteDB.boutique_id.in_(scope))
     dettes_clients_en_cours = sum(d.solde_restant for d in dettes_q.all())
 
     finance = KpiFinance(
@@ -363,7 +384,7 @@ def get_dashboard_kpis(
             alertes_stock=stock_alerte_par_boutique.get(b.id, 0),
         )
         for b in db.query(BoutiqueDB).filter(BoutiqueDB.statut == StatutBoutique.active).all()
-        if not boutique_id or b.id == boutique_id
+        if scope is None or b.id in scope
     ]
 
     return DashboardKpis(

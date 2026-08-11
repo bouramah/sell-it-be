@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import apply_boutique_filter, assert_boutique_access
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import CaisseDB, DetteDB, MouvementCaisseDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB
+from app.db_models.models import CaisseDB, DetteDB, MouvementCaisseDB, PaiementClientDB, PaiementFournisseurDB, RemboursementDB, UtilisateurDB
 from app.models.schemas import Remboursement, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 
@@ -37,12 +38,15 @@ def _to_ligne(d: DetteDB) -> LigneDette:
 
 
 @router.get("", response_model=list[LigneDette])
-def list_dettes(tiers_type: TiersType | None = None, boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneDette]:
-    query = db.query(DetteDB)
+def list_dettes(
+    tiers_type: TiersType | None = None,
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneDette]:
+    query = apply_boutique_filter(db.query(DetteDB), DetteDB.boutique_id, current_user, boutique_id)
     if tiers_type:
         query = query.filter(DetteDB.tiers_type == tiers_type)
-    if boutique_id:
-        query = query.filter(DetteDB.boutique_id == boutique_id)
     return [_to_ligne(d) for d in query.all()]
 
 
@@ -50,8 +54,9 @@ def list_dettes(tiers_type: TiersType | None = None, boutique_id: str | None = N
 def create_dette(
     payload: DetteCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneDette:
+    assert_boutique_access(current_user, payload.boutique_id)
     d = DetteDB(
         id=str(uuid.uuid4())[:8],
         tiers_type=payload.tiers_type,
@@ -68,8 +73,16 @@ def create_dette(
 
 
 @router.get("/remboursements", response_model=list[Remboursement])
-def list_remboursements(dette_id: str | None = None, db: Session = Depends(get_db)) -> list[RemboursementDB]:
-    query = db.query(RemboursementDB)
+def list_remboursements(
+    dette_id: str | None = None,
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[RemboursementDB]:
+    query = apply_boutique_filter(
+        db.query(RemboursementDB).join(DetteDB, RemboursementDB.dette_id == DetteDB.id),
+        DetteDB.boutique_id, current_user, boutique_id,
+    )
     if dette_id:
         query = query.filter(RemboursementDB.dette_id == dette_id)
     return query.all()
@@ -80,11 +93,12 @@ def encaisser_remboursement(
     dette_id: str,
     payload: RemboursementCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneDette:
     d = db.get(DetteDB, dette_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dette introuvable")
+    assert_boutique_access(current_user, d.boutique_id)
     if payload.montant > d.solde_restant:
         raise HTTPException(status_code=400, detail="Le montant dépasse le solde restant")
 

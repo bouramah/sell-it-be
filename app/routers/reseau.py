@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_admin
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB, UtilisateurDB
@@ -36,12 +37,15 @@ def list_boutiques(
     secteur: str | None = None,
     statut: StatutBoutique | None = None,
     db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> list[Boutique]:
     query = db.query(BoutiqueDB)
     if ville:
         query = query.filter(BoutiqueDB.ville == ville)
     if statut:
         query = query.filter(BoutiqueDB.statut == statut)
+    if not a_portee_reseau(current_user):
+        query = query.filter(BoutiqueDB.id.in_(boutiques_autorisees(current_user)))
     result = [_to_schema(b) for b in query.all()]
     if secteur:
         result = [b for b in result if secteur in b.secteurs]
@@ -49,10 +53,15 @@ def list_boutiques(
 
 
 @router.get("/boutiques/{boutique_id}", response_model=Boutique)
-def get_boutique(boutique_id: str, db: Session = Depends(get_db)) -> Boutique:
+def get_boutique(
+    boutique_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> Boutique:
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")
+    assert_boutique_access(current_user, boutique_id)
     return _to_schema(b)
 
 
@@ -62,6 +71,7 @@ def create_boutique(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
+    require_admin(current_user)
     boutique_id = str(uuid.uuid4())[:8]
     b = BoutiqueDB(
         id=boutique_id,
@@ -89,8 +99,9 @@ def update_boutique(
     boutique_id: str,
     payload: BoutiqueUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
+    require_admin(current_user)
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")
@@ -113,6 +124,7 @@ def delete_boutique(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
+    require_admin(current_user)
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")

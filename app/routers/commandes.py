@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import (
@@ -28,6 +29,7 @@ from app.models.schemas import (
     LigneCommandeFournisseur,
     ModePaiement,
     MotifMouvementStock,
+    Role,
     StatutCommandeClient,
     StatutCommandeFournisseur,
     StatutPaiement,
@@ -43,6 +45,8 @@ from app.models.write_schemas import (
 
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
 
+ROLES_COMMANDE_FOURNISSEUR = (Role.gerant, Role.responsable_achats, Role.administrateur)
+
 
 def _produits_by_id(db: Session, ids: set[str]) -> dict[str, ProduitDB]:
     produits = {p.id: p for p in db.query(ProduitDB).filter(ProduitDB.id.in_(ids)).all()}
@@ -53,18 +57,25 @@ def _produits_by_id(db: Session, ids: set[str]) -> dict[str, ProduitDB]:
 
 
 @router.get("/commandes-clients", response_model=list[CommandeClient])
-def list_commandes_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[CommandeClientDB]:
-    query = db.query(CommandeClientDB)
-    if boutique_id:
-        query = query.filter(CommandeClientDB.boutique_id == boutique_id)
+def list_commandes_clients(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[CommandeClientDB]:
+    query = apply_boutique_filter(db.query(CommandeClientDB), CommandeClientDB.boutique_id, current_user, boutique_id)
     return query.all()
 
 
 @router.get("/commandes-clients/{commande_id}", response_model=CommandeClientDetail)
-def get_commande_client(commande_id: str, db: Session = Depends(get_db)) -> CommandeClientDetail:
+def get_commande_client(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> CommandeClientDetail:
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
     produits = _produits_by_id(db, {l.produit_id for l in c.lignes}) if c.lignes else {}
     return CommandeClientDetail(
         id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal,
@@ -80,8 +91,9 @@ def get_commande_client(commande_id: str, db: Session = Depends(get_db)) -> Comm
 def create_commande_client(
     payload: CommandeClientCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeClientDetail:
+    assert_boutique_access(current_user, payload.boutique_id)
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
     produits = _produits_by_id(db, {a.produit_id for a in payload.articles})
@@ -114,7 +126,7 @@ def create_commande_client(
                 stock.quantite_reservee += a.quantite
 
     db.commit()
-    return get_commande_client(c.id, db)
+    return get_commande_client(c.id, db, current_user)
 
 
 @router.put("/commandes-clients/{commande_id}", response_model=CommandeClientDetail)
@@ -127,6 +139,7 @@ def update_commande_client(
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
 
     ancien_statut = c.statut
     etait_reservee = ancien_statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree)
@@ -194,22 +207,29 @@ def update_commande_client(
                 stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
 
     db.commit()
-    return get_commande_client(commande_id, db)
+    return get_commande_client(commande_id, db, current_user)
 
 
 @router.get("/commandes-fournisseurs", response_model=list[LigneCommandeFournisseur])
-def list_commandes_fournisseurs(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[CommandeFournisseurDB]:
-    query = db.query(CommandeFournisseurDB)
-    if boutique_id:
-        query = query.filter(CommandeFournisseurDB.boutique_id == boutique_id)
+def list_commandes_fournisseurs(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[CommandeFournisseurDB]:
+    query = apply_boutique_filter(db.query(CommandeFournisseurDB), CommandeFournisseurDB.boutique_id, current_user, boutique_id)
     return query.all()
 
 
 @router.get("/commandes-fournisseurs/{commande_id}", response_model=CommandeFournisseurDetail)
-def get_commande_fournisseur(commande_id: str, db: Session = Depends(get_db)) -> CommandeFournisseurDetail:
+def get_commande_fournisseur(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> CommandeFournisseurDetail:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
     produits = _produits_by_id(db, {l.produit_id for l in c.lignes}) if c.lignes else {}
     return CommandeFournisseurDetail(
         id=c.id, fournisseur_id=c.fournisseur_id, boutique_id=c.boutique_id,
@@ -228,8 +248,10 @@ def get_commande_fournisseur(commande_id: str, db: Session = Depends(get_db)) ->
 def create_commande_fournisseur(
     payload: CommandeFournisseurCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeFournisseurDetail:
+    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    assert_boutique_access(current_user, payload.boutique_id)
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
     produits = _produits_by_id(db, {a.produit_id for a in payload.articles})
@@ -246,7 +268,7 @@ def create_commande_fournisseur(
         db.add(LigneCommandeFournisseurDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a.produit_id, quantite=a.quantite, prix_unitaire=prix, quantite_recue=0))
     c.montant = montant
     db.commit()
-    return get_commande_fournisseur(c.id, db)
+    return get_commande_fournisseur(c.id, db, current_user)
 
 
 @router.put("/commandes-fournisseurs/{commande_id}", response_model=CommandeFournisseurDetail)
@@ -254,11 +276,13 @@ def update_commande_fournisseur(
     commande_id: str,
     payload: CommandeFournisseurUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeFournisseurDetail:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    assert_boutique_access(current_user, c.boutique_id)
 
     data = payload.model_dump(exclude_unset=True)
     articles = data.pop("articles", None)
@@ -282,7 +306,7 @@ def update_commande_fournisseur(
         c.montant = montant
 
     db.commit()
-    return get_commande_fournisseur(commande_id, db)
+    return get_commande_fournisseur(commande_id, db, current_user)
 
 
 @router.post("/commandes-fournisseurs/{commande_id}/reception", response_model=CommandeFournisseurDetail)
@@ -290,11 +314,13 @@ def receptionner_commande_fournisseur(
     commande_id: str,
     payload: ReceptionCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeFournisseurDetail:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    assert_boutique_access(current_user, c.boutique_id)
     if not payload.lignes:
         raise HTTPException(status_code=400, detail="Aucune ligne à réceptionner")
 
@@ -341,7 +367,7 @@ def receptionner_commande_fournisseur(
         c.statut = StatutCommandeFournisseur.receptionnee_partielle
 
     db.commit()
-    return get_commande_fournisseur(commande_id, db)
+    return get_commande_fournisseur(commande_id, db, current_user)
 
 
 @router.put("/commandes-fournisseurs/{commande_id}/reception", response_model=CommandeFournisseurDetail)
@@ -349,11 +375,13 @@ def corriger_reception_commande_fournisseur(
     commande_id: str,
     payload: CorrectionReceptionCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeFournisseurDetail:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    assert_boutique_access(current_user, c.boutique_id)
     if not payload.lignes:
         raise HTTPException(status_code=400, detail="Aucune ligne à corriger")
 
@@ -409,4 +437,4 @@ def corriger_reception_commande_fournisseur(
                 db.delete(paiement)
 
     db.commit()
-    return get_commande_fournisseur(commande_id, db)
+    return get_commande_fournisseur(commande_id, db, current_user)

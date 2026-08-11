@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from app.core.authorization import assert_boutique_access
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.db_models.models import (
     BoutiqueDB,
     ClientDB,
@@ -10,6 +12,7 @@ from app.db_models.models import (
     FournisseurDB,
     PaiementClientDB,
     ProduitDB,
+    UtilisateurDB,
 )
 from app.services.pdf import articles_table, document_shell, render_pdf, totals_block
 
@@ -41,10 +44,15 @@ def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
 
 
 @router.get("/commandes-fournisseurs/{commande_id}/bon-commande.pdf")
-def bon_commande_pdf(commande_id: str, db: Session = Depends(get_db)) -> Response:
+def bon_commande_pdf(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> Response:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
     fournisseur = db.get(FournisseurDB, c.fournisseur_id)
     boutique = db.get(BoutiqueDB, c.boutique_id)
     produits = {p.id: p for p in db.query(ProduitDB).all()}
@@ -88,10 +96,15 @@ def bon_commande_pdf(commande_id: str, db: Session = Depends(get_db)) -> Respons
 
 
 @router.get("/commandes-fournisseurs/{commande_id}/bon-reception.pdf")
-def bon_reception_pdf(commande_id: str, db: Session = Depends(get_db)) -> Response:
+def bon_reception_pdf(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> Response:
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
     fournisseur = db.get(FournisseurDB, c.fournisseur_id)
     boutique = db.get(BoutiqueDB, c.boutique_id)
     produits = {p.id: p for p in db.query(ProduitDB).all()}
@@ -135,10 +148,15 @@ def bon_reception_pdf(commande_id: str, db: Session = Depends(get_db)) -> Respon
 
 
 @router.get("/commandes-clients/{commande_id}/facture.pdf")
-def facture_pdf(commande_id: str, db: Session = Depends(get_db)) -> Response:
+def facture_pdf(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> Response:
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+    assert_boutique_access(current_user, c.boutique_id)
     boutique = db.get(BoutiqueDB, c.boutique_id)
     client = db.query(ClientDB).filter(ClientDB.nom == c.client_nom).first()
     produits = {p.id: p for p in db.query(ProduitDB).all()}
@@ -179,10 +197,15 @@ def facture_pdf(commande_id: str, db: Session = Depends(get_db)) -> Response:
 
 
 @router.get("/paiements-clients/{paiement_id}/recu.pdf")
-def recu_pdf(paiement_id: str, db: Session = Depends(get_db)) -> Response:
+def recu_pdf(
+    paiement_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> Response:
     p = db.get(PaiementClientDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    assert_boutique_access(current_user, p.boutique_id)
     boutique = db.get(BoutiqueDB, p.boutique_id)
 
     body = f"""

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import DEFAULT_PASSWORD, get_current_user, hash_password
+from app.core.authorization import require_admin
 from app.db_models.models import BoutiqueDB, PermissionDB, UtilisateurDB
 from app.models.schemas import PermissionLigne, Role, Utilisateur
 from app.models.write_schemas import PermissionUpdate, UtilisateurCreate, UtilisateurUpdate
@@ -43,6 +44,7 @@ def create_utilisateur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Utilisateur:
+    require_admin(current_user)
     if db.query(UtilisateurDB).filter(UtilisateurDB.contact == payload.contact).first():
         raise HTTPException(status_code=409, detail="Un utilisateur avec ce contact existe déjà")
 
@@ -71,6 +73,7 @@ def update_utilisateur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Utilisateur:
+    require_admin(current_user)
     u = db.get(UtilisateurDB, utilisateur_id)
     if not u:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
@@ -102,6 +105,7 @@ def delete_utilisateur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
+    require_admin(current_user)
     u = db.get(UtilisateurDB, utilisateur_id)
     if not u:
         raise HTTPException(status_code=404, detail="Utilisateur introuvable")
@@ -125,6 +129,7 @@ def update_permission(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PermissionLigne:
+    require_admin(current_user)
     row = db.get(PermissionDB, (payload.module_action, payload.role))
     if not row:
         raise HTTPException(status_code=404, detail="Permission introuvable")

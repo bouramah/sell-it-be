@@ -5,12 +5,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import CaisseDB, MouvementCaisseDB, UtilisateurDB
-from app.models.schemas import Caisse, StatutCaisse, TypeMouvementCaisse
+from app.models.schemas import Caisse, Role, StatutCaisse, TypeMouvementCaisse
 from app.models.write_schemas import CaisseCreate, CaisseFermeture, MouvementCaisseCreate
 from app.services.audit import log_audit
+
+ROLES_CAISSE = (Role.caissier, Role.gerant, Role.administrateur)
 
 router = APIRouter(prefix="/api/v1/caisse", tags=["caisse"])
 
@@ -27,10 +30,12 @@ class LigneMouvementCaisse(BaseModel):
 
 
 @router.get("/caisses", response_model=list[Caisse])
-def list_caisses(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[CaisseDB]:
-    query = db.query(CaisseDB)
-    if boutique_id:
-        query = query.filter(CaisseDB.boutique_id == boutique_id)
+def list_caisses(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[CaisseDB]:
+    query = apply_boutique_filter(db.query(CaisseDB), CaisseDB.boutique_id, current_user, boutique_id)
     return query.all()
 
 
@@ -38,8 +43,10 @@ def list_caisses(boutique_id: str | None = None, db: Session = Depends(get_db)) 
 def create_caisse(
     payload: CaisseCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CaisseDB:
+    require_role(current_user, *ROLES_CAISSE)
+    assert_boutique_access(current_user, payload.boutique_id)
     c = CaisseDB(
         id=str(uuid.uuid4())[:8],
         boutique_id=payload.boutique_id,
@@ -66,6 +73,8 @@ def fermer_caisse(
     c = db.get(CaisseDB, caisse_id)
     if not c:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
+    require_role(current_user, *ROLES_CAISSE)
+    assert_boutique_access(current_user, c.boutique_id)
     c.solde_reel = payload.solde_reel
     c.statut = StatutCaisse.fermee if payload.solde_reel == c.solde_theorique else StatutCaisse.ecart_signale
     if c.statut == StatutCaisse.ecart_signale:
@@ -85,11 +94,13 @@ def fermer_caisse(
 def rouvrir_caisse(
     caisse_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CaisseDB:
     c = db.get(CaisseDB, caisse_id)
     if not c:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
+    require_role(current_user, *ROLES_CAISSE)
+    assert_boutique_access(current_user, c.boutique_id)
     c.statut = StatutCaisse.ouverte
     db.commit()
     db.refresh(c)
@@ -97,10 +108,12 @@ def rouvrir_caisse(
 
 
 @router.get("/mouvements", response_model=list[LigneMouvementCaisse])
-def list_mouvements_caisse(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneMouvementCaisse]:
-    query = db.query(MouvementCaisseDB)
-    if boutique_id:
-        query = query.filter(MouvementCaisseDB.boutique_id == boutique_id)
+def list_mouvements_caisse(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneMouvementCaisse]:
+    query = apply_boutique_filter(db.query(MouvementCaisseDB), MouvementCaisseDB.boutique_id, current_user, boutique_id)
     rows = sorted(query.all(), key=lambda m: m.horodatage)
     return [
         LigneMouvementCaisse(
@@ -121,11 +134,13 @@ def list_mouvements_caisse(boutique_id: str | None = None, db: Session = Depends
 def create_mouvement_caisse(
     payload: MouvementCaisseCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneMouvementCaisse:
     caisse = db.get(CaisseDB, payload.caisse_id)
     if not caisse:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
+    require_role(current_user, *ROLES_CAISSE)
+    assert_boutique_access(current_user, caisse.boutique_id)
     if caisse.statut != StatutCaisse.ouverte:
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un mouvement")
 

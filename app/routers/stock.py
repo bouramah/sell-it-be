@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import apply_boutique_filter, assert_boutique_access
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB
+from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB, UtilisateurDB
 from app.models.schemas import MotifMouvementStock, StatutEcartInventaire
 from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
 
@@ -57,11 +58,14 @@ def _statut_stock(disponible: int, seuil: int) -> str:
 
 
 @router.get("", response_model=list[LigneStock])
-def list_stock(boutique_id: str | None = None, secteur: str | None = None, db: Session = Depends(get_db)) -> list[LigneStock]:
+def list_stock(
+    boutique_id: str | None = None,
+    secteur: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneStock]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    query = db.query(StockBoutiqueDB)
-    if boutique_id:
-        query = query.filter(StockBoutiqueDB.boutique_id == boutique_id)
+    query = apply_boutique_filter(db.query(StockBoutiqueDB), StockBoutiqueDB.boutique_id, current_user, boutique_id)
     rows = query.all()
     if secteur:
         rows = [s for s in rows if produits_by_id[s.produit_id].secteur == secteur]
@@ -85,8 +89,9 @@ def list_stock(boutique_id: str | None = None, secteur: str | None = None, db: S
 def create_ligne_stock(
     payload: StockLigneCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneStock:
+    assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -122,8 +127,9 @@ def update_ligne_stock(
     produit_id: str,
     payload: StockLigneUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneStock:
+    assert_boutique_access(current_user, boutique_id)
     s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
     if not s:
         raise HTTPException(status_code=404, detail="Ligne de stock introuvable")
@@ -149,8 +155,9 @@ def delete_ligne_stock(
     boutique_id: str,
     produit_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
+    assert_boutique_access(current_user, boutique_id)
     s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
     if not s:
         raise HTTPException(status_code=404, detail="Ligne de stock introuvable")
@@ -159,11 +166,13 @@ def delete_ligne_stock(
 
 
 @router.get("/mouvements", response_model=list[LigneMouvementStock])
-def list_mouvements(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneMouvementStock]:
+def list_mouvements(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneMouvementStock]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    query = db.query(MouvementStockDB)
-    if boutique_id:
-        query = query.filter(MouvementStockDB.boutique_id == boutique_id)
+    query = apply_boutique_filter(db.query(MouvementStockDB), MouvementStockDB.boutique_id, current_user, boutique_id)
     rows = sorted(query.all(), key=lambda m: m.horodatage, reverse=True)
     return [
         LigneMouvementStock(
@@ -184,8 +193,9 @@ def list_mouvements(boutique_id: str | None = None, db: Session = Depends(get_db
 def create_mouvement(
     payload: MouvementStockCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneMouvementStock:
+    assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -231,11 +241,13 @@ def create_mouvement(
 
 
 @router.get("/inventaire", response_model=list[LigneEcartInventaire])
-def list_inventaire(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LigneEcartInventaire]:
+def list_inventaire(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneEcartInventaire]:
     produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
-    query = db.query(EcartInventaireDB)
-    if boutique_id:
-        query = query.filter(EcartInventaireDB.boutique_id == boutique_id)
+    query = apply_boutique_filter(db.query(EcartInventaireDB), EcartInventaireDB.boutique_id, current_user, boutique_id)
     return [
         LigneEcartInventaire(
             id=e.id,
@@ -255,8 +267,9 @@ def list_inventaire(boutique_id: str | None = None, db: Session = Depends(get_db
 def create_inventaire(
     payload: EcartInventaireCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneEcartInventaire:
+    assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:
         raise HTTPException(status_code=404, detail="Produit introuvable")

@@ -2,8 +2,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
+from app.core.authorization import ROLES_PORTEE_RESEAU, require_role
 from app.core.database import get_db
-from app.db_models.models import BoutiqueDB, CommandeClientDB, CommandeFournisseurDB, DepenseDB
+from app.core.security import get_current_user
+from app.db_models.models import BoutiqueDB, CommandeClientDB, CommandeFournisseurDB, DepenseDB, UtilisateurDB
 from app.models.schemas import CompteResultatBoutique, StatutCommandeClient, StatutCommandeFournisseur
 
 router = APIRouter(prefix="/api/v1/comptabilite", tags=["comptabilite"])
@@ -18,7 +20,12 @@ class ComptabiliteConsolidee(BaseModel):
 
 
 @router.get("", response_model=ComptabiliteConsolidee)
-def get_comptabilite(db: Session = Depends(get_db)) -> ComptabiliteConsolidee:
+def get_comptabilite(
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> ComptabiliteConsolidee:
+    # Comptabilité consolidée du réseau — réservée au siège (cf. CDC).
+    require_role(current_user, *ROLES_PORTEE_RESEAU)
     boutiques = db.query(BoutiqueDB).all()
 
     commandes_clients = db.query(CommandeClientDB).filter(CommandeClientDB.statut != StatutCommandeClient.annulee).all()

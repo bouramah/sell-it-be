@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from app.core.authorization import a_portee_reseau, apply_boutique_filter, assert_boutique_access, boutiques_autorisees
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import (
@@ -18,6 +19,7 @@ from app.db_models.models import (
     MouvementCaisseDB,
     PaiementClientDB,
     PaiementFournisseurDB,
+    UtilisateurDB,
 )
 from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutCaisse, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementCaisseInput, PaiementClientCreate, PaiementFournisseurCreate
@@ -59,11 +61,26 @@ def _to_schema(c: ClientDB, db: Session) -> Client:
     )
 
 
+def _assert_client_boutiques_access(current_user: UtilisateurDB, boutique_ids: list[str]) -> None:
+    if a_portee_reseau(current_user):
+        return
+    autorisees = boutiques_autorisees(current_user)
+    if not all(bid in autorisees for bid in boutique_ids):
+        raise HTTPException(status_code=403, detail="Vous n'avez pas accès à une des boutiques indiquées")
+
+
 @router.get("/clients", response_model=list[Client])
-def list_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[Client]:
+def list_clients(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[Client]:
     query = db.query(ClientDB)
     if boutique_id:
+        assert_boutique_access(current_user, boutique_id)
         query = query.filter(ClientDB.boutiques.any(BoutiqueDB.id == boutique_id))
+    elif not a_portee_reseau(current_user):
+        query = query.filter(ClientDB.boutiques.any(BoutiqueDB.id.in_(boutiques_autorisees(current_user))))
     return [_to_schema(c, db) for c in query.all()]
 
 
@@ -71,8 +88,9 @@ def list_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) 
 def create_client(
     payload: ClientCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Client:
+    _assert_client_boutiques_access(current_user, payload.boutique_ids)
     data = payload.model_dump(exclude={"boutique_ids"})
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
     c = ClientDB(id=str(uuid.uuid4())[:8], boutiques=boutiques, **data)
@@ -87,11 +105,14 @@ def update_client(
     client_id: str,
     payload: ClientUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Client:
     c = db.get(ClientDB, client_id)
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
+    _assert_client_boutiques_access(current_user, [b.id for b in c.boutiques])
+    if payload.boutique_ids is not None:
+        _assert_client_boutiques_access(current_user, payload.boutique_ids)
     data = payload.model_dump(exclude_unset=True, exclude={"boutique_ids"})
     for field, value in data.items():
         setattr(c, field, value)
@@ -106,28 +127,33 @@ def update_client(
 def delete_client(
     client_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
     c = db.get(ClientDB, client_id)
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
+    _assert_client_boutiques_access(current_user, [b.id for b in c.boutiques])
     db.delete(c)
     db.commit()
 
 
 @router.get("/paiements-clients", response_model=list[PaiementClient])
-def list_paiements_clients(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[PaiementClientDB]:
-    query = db.query(PaiementClientDB)
-    if boutique_id:
-        query = query.filter(PaiementClientDB.boutique_id == boutique_id)
+def list_paiements_clients(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[PaiementClientDB]:
+    query = apply_boutique_filter(db.query(PaiementClientDB), PaiementClientDB.boutique_id, current_user, boutique_id)
     return sorted(query.all(), key=lambda p: p.date, reverse=True)
 
 
 @router.get("/paiements-fournisseurs", response_model=list[PaiementFournisseur])
-def list_paiements_fournisseurs(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[PaiementFournisseurDB]:
-    query = db.query(PaiementFournisseurDB)
-    if boutique_id:
-        query = query.filter(PaiementFournisseurDB.boutique_id == boutique_id)
+def list_paiements_fournisseurs(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[PaiementFournisseurDB]:
+    query = apply_boutique_filter(db.query(PaiementFournisseurDB), PaiementFournisseurDB.boutique_id, current_user, boutique_id)
     return sorted(query.all(), key=lambda p: p.date, reverse=True)
 
 
@@ -161,8 +187,9 @@ def _mouvement_caisse(db: Session, caisse: CaisseDB, type_mouvement: TypeMouveme
 def create_paiement_client(
     payload: PaiementClientCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementClientDB:
+    assert_boutique_access(current_user, payload.boutique_id)
     statut = StatutPaiement.encaisse
     reference = "Paiement direct"
     if payload.commande_id:
@@ -201,8 +228,9 @@ def create_paiement_client(
 def create_paiement_fournisseur(
     payload: PaiementFournisseurCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementFournisseurDB:
+    assert_boutique_access(current_user, payload.boutique_id)
     statut = StatutPaiement.paye
     reference = "Paiement direct"
     if payload.commande_id:
@@ -241,11 +269,12 @@ def encaisser_paiement_client(
     paiement_id: str,
     payload: PaiementCaisseInput,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementClientDB:
     p = db.get(PaiementClientDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    assert_boutique_access(current_user, p.boutique_id)
     if p.statut in (StatutPaiement.encaisse, StatutPaiement.paye):
         raise HTTPException(status_code=400, detail="Ce paiement est déjà encaissé")
 
@@ -268,11 +297,12 @@ def marquer_paiement_fournisseur_paye(
     paiement_id: str,
     payload: PaiementCaisseInput,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementFournisseurDB:
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    assert_boutique_access(current_user, p.boutique_id)
     if p.statut == StatutPaiement.paye:
         raise HTTPException(status_code=400, detail="Ce paiement est déjà réglé")
 
@@ -295,11 +325,12 @@ def uploader_document_paiement_fournisseur(
     paiement_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementFournisseurDB:
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    assert_boutique_access(current_user, p.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
     if not ext:
@@ -323,11 +354,12 @@ def uploader_document_paiement_fournisseur(
 def supprimer_document_paiement_fournisseur(
     paiement_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementFournisseurDB:
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
+    assert_boutique_access(current_user, p.boutique_id)
     if p.document_url:
         _delete_document_file(p.document_url)
         p.document_url = None

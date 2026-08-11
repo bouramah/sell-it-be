@@ -5,6 +5,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from app.core.authorization import ROLES_PORTEE_RESEAU, apply_boutique_filter, assert_boutique_access, require_role
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.db_models.models import CaisseDB, DepenseDB, MouvementCaisseDB, UtilisateurDB
@@ -29,10 +30,12 @@ def _delete_justificatif_file(url: str) -> None:
 
 
 @router.get("", response_model=list[Depense])
-def list_depenses(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[DepenseDB]:
-    query = db.query(DepenseDB)
-    if boutique_id:
-        query = query.filter(DepenseDB.boutique_id == boutique_id)
+def list_depenses(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[DepenseDB]:
+    query = apply_boutique_filter(db.query(DepenseDB), DepenseDB.boutique_id, current_user, boutique_id)
     return query.all()
 
 
@@ -40,8 +43,9 @@ def list_depenses(boutique_id: str | None = None, db: Session = Depends(get_db))
 def create_depense(
     payload: DepenseCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
+    assert_boutique_access(current_user, payload.boutique_id)
     caisse = db.get(CaisseDB, payload.caisse_id)
     if not caisse:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
@@ -83,6 +87,7 @@ def valider_depense(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
+    require_role(current_user, *ROLES_PORTEE_RESEAU)
     if d.statut_validation != StatutValidationDepense.en_attente:
         raise HTTPException(status_code=400, detail="Cette dépense n'est pas en attente de validation")
     d.statut_validation = StatutValidationDepense.validee_siege
@@ -102,11 +107,12 @@ def uploader_justificatif(
     depense_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
+    assert_boutique_access(current_user, d.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
     if not ext:
@@ -130,11 +136,12 @@ def uploader_justificatif(
 def supprimer_justificatif(
     depense_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
+    assert_boutique_access(current_user, d.boutique_id)
     if d.justificatif_url:
         _delete_justificatif_file(d.justificatif_url)
         d.justificatif_url = None

@@ -4,9 +4,10 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from app.core.authorization import apply_boutique_filter, assert_boutique_access
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.db_models.models import CommandeClientDB, LivraisonDB
+from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
 from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison
 from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
 
@@ -24,10 +25,12 @@ def _delete_preuve_file(url: str) -> None:
 
 
 @router.get("", response_model=list[Livraison])
-def list_livraisons(boutique_id: str | None = None, db: Session = Depends(get_db)) -> list[LivraisonDB]:
-    query = db.query(LivraisonDB)
-    if boutique_id:
-        query = query.filter(LivraisonDB.boutique_id == boutique_id)
+def list_livraisons(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LivraisonDB]:
+    query = apply_boutique_filter(db.query(LivraisonDB), LivraisonDB.boutique_id, current_user, boutique_id)
     return query.all()
 
 
@@ -35,8 +38,9 @@ def list_livraisons(boutique_id: str | None = None, db: Session = Depends(get_db
 def create_livraison(
     payload: LivraisonCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LivraisonDB:
+    assert_boutique_access(current_user, payload.boutique_id)
     commande = db.get(CommandeClientDB, payload.commande_id)
     if not commande:
         raise HTTPException(status_code=404, detail="Commande introuvable")
@@ -56,11 +60,12 @@ def update_statut(
     livraison_id: str,
     payload: LivraisonStatutUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LivraisonDB:
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
+    assert_boutique_access(current_user, l.boutique_id)
     l.statut = payload.statut
     if payload.statut == StatutLivraison.livree:
         commande = db.get(CommandeClientDB, l.commande_id)
@@ -76,11 +81,12 @@ def uploader_preuve(
     livraison_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LivraisonDB:
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
+    assert_boutique_access(current_user, l.boutique_id)
 
     ext = ALLOWED_IMAGE_TYPES.get(file.content_type or "")
     if not ext:
@@ -104,11 +110,12 @@ def uploader_preuve(
 def supprimer_preuve(
     livraison_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LivraisonDB:
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
+    assert_boutique_access(current_user, l.boutique_id)
     if l.preuve_url:
         _delete_preuve_file(l.preuve_url)
         l.preuve_url = None
