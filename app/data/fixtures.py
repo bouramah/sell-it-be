@@ -413,8 +413,11 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
         ReferentielItem(id="electronique", nom="Électronique"),
     ],
     "caisses_comptes": [
-        ReferentielItem(id="caisse-principale", nom="Caisse principale"),
-        ReferentielItem(id="caisse-secondaire", nom="Caisse secondaire"),
+        ReferentielItem(id="caisse-principale", nom="Principale"),
+        ReferentielItem(id="caisse-secondaire", nom="Secondaire"),
+        ReferentielItem(id="caisse-mobile-money", nom="Mobile Money"),
+        ReferentielItem(id="caisse-banque", nom="Banque"),
+        ReferentielItem(id="caisse-especes", nom="Espèces"),
     ],
     "livreurs": [
         ReferentielItem(id="ousmane-barry", nom="Ousmane Barry"),

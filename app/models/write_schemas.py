@@ -164,14 +164,14 @@ class CaisseCreate(BaseModel):
     boutique_id: str
     libelle: str
     fond_initial: float
-    operateur: str
+    operateur: str = ""
 
 
 class MouvementCaisseCreate(BaseModel):
     caisse_id: str
     type: TypeMouvementCaisse
     motif: str
-    operateur: str
+    operateur: str = ""
     montant: float  # positif, le signe est dérivé du type
 
 
@@ -281,7 +281,7 @@ class DepenseCreate(BaseModel):
     boutique_id: str
     caisse_id: str
     categorie: str
-    auteur: str
+    auteur: str = ""
     date: date
     montant: float
 
