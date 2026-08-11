@@ -4,18 +4,15 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import LIVRAISON_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
-from app.models.schemas import Livraison, Role, StatutCommandeClient, StatutLivraison
+from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison
 from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
 
 router = APIRouter(prefix="/api/v1/livraisons", tags=["livraisons"])
-
-# CDC 3.3 : "Gérer les livraisons" = gérant (+ administrateur) ; responsable_achats n'a qu'une
-# vue globale (lecture), vendeur/caissier n'y figurent pas du tout.
-ROLES_LIVRAISON_GESTION = (Role.gerant, Role.administrateur)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "livraisons"
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
@@ -44,7 +41,7 @@ def create_livraison(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LivraisonDB:
-    require_role(current_user, *ROLES_LIVRAISON_GESTION)
+    require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, payload.boutique_id)
     commande = db.get(CommandeClientDB, payload.commande_id)
     if not commande:
@@ -70,7 +67,7 @@ def update_statut(
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
-    require_role(current_user, *ROLES_LIVRAISON_GESTION)
+    require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, l.boutique_id)
     l.statut = payload.statut
     if payload.statut == StatutLivraison.livree:
@@ -92,7 +89,7 @@ def uploader_preuve(
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
-    require_role(current_user, *ROLES_LIVRAISON_GESTION)
+    require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, l.boutique_id)
 
     ext = ALLOWED_IMAGE_TYPES.get(file.content_type or "")
@@ -122,7 +119,7 @@ def supprimer_preuve(
     l = db.get(LivraisonDB, livraison_id)
     if not l:
         raise HTTPException(status_code=404, detail="Livraison introuvable")
-    require_role(current_user, *ROLES_LIVRAISON_GESTION)
+    require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, l.boutique_id)
     if l.preuve_url:
         _delete_preuve_file(l.preuve_url)

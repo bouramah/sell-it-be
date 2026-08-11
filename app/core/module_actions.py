@@ -1,0 +1,37 @@
+"""Chaînes module_action exactes de la matrice des droits (table `permissions`).
+
+Une seule source pour ces libellés — utilisés à la fois par les migrations qui
+seedent la table et par les appels require_permission() dans les routers, pour
+éviter tout risque de désynchronisation par faute de frappe.
+"""
+
+VENTE_DIRECTE = "Enregistrer une vente directe (caisse)"
+CAISSE_OUVERTURE = "Ouvrir / fermer une caisse"
+CAISSE_MOUVEMENT = "Enregistrer un mouvement de caisse manuel"
+COMMANDE_FOURNISSEUR_CREATION = "Créer une commande fournisseur"
+COMMANDE_FOURNISSEUR_RECEPTION = "Réceptionner une commande fournisseur"
+DEPENSE_VALIDATION_SEUIL = "Valider les dépenses au-delà d'un seuil"
+DASHBOARD_RESEAU = "Consulter le dashboard consolidé siège"
+DASHBOARD_BOUTIQUE = "Consulter le dashboard de sa boutique"
+UTILISATEURS_GESTION = "Gérer les droits utilisateurs"
+BOUTIQUE_GESTION = "Créer / fermer une boutique"
+ENCAISSEMENT = "Valider un encaissement / paiement"
+COMMANDE_CLIENT = "Créer / modifier une commande client"
+DETTE_CREATION = "Enregistrer une dette / créance client"
+DETTE_REMBOURSEMENT = "Enregistrer un remboursement de dette"
+TRANSFERT_RECEPTION = "Réceptionner un transfert de stock"
+LIVRAISON_GESTION = "Gérer les livraisons (affectation livreur, suivi)"
+DEPENSE_CREATION = "Enregistrer une dépense de boutique"
+COMPTABILITE_BOUTIQUE = "Consulter la comptabilité de sa boutique"
+COMPTABILITE_RESEAU = "Consulter la comptabilité consolidée du réseau"
+PROMOTION_CREATION = "Paramétrer les promotions et tarifs"
+PROMOTION_VALIDATION = "Valider ou refuser une promotion"
+MODULES_IA = "Accéder aux modules IA"
+PRODUIT_GESTION = "Gérer le catalogue produits (créer/modifier/supprimer)"
+FOURNISSEUR_GESTION = "Gérer les fournisseurs (créer/modifier/supprimer)"
+CLIENT_GESTION = "Créer / modifier une fiche client"
+TRANSFERT_DEMANDE = "Initier un transfert de stock (demande)"
+TRANSFERT_VALIDATION = "Valider un transfert de stock (autoriser l'envoi)"
+STOCK_ECRITURE = "Modifier le stock (ajout de ligne, mouvement manuel, inventaire)"
+REFERENTIELS_GESTION = "Gérer les référentiels (villes, catégories, motifs…)"
+SECURITE_GESTION = "Consulter le journal d'audit et gérer les paramètres de sécurité"

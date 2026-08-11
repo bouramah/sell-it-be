@@ -4,17 +4,16 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from app.core.authorization import require_role
+from app.core.authorization import require_permission
 from app.core.database import get_db
 from app.core.db_errors import commit_or_409
+from app.core.module_actions import PRODUIT_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import ProduitDB, ProduitImageDB, UtilisateurDB
-from app.models.schemas import Produit, ProduitImage, Role
+from app.models.schemas import Produit, ProduitImage
 from app.models.write_schemas import ProduitCreate, ProduitUpdate
 
 router = APIRouter(prefix="/api/v1/produits", tags=["produits"])
-
-ROLES_GESTION_PRODUITS = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "produits"
 ALLOWED_IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
@@ -59,7 +58,7 @@ def create_produit(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Produit:
-    require_role(current_user, *ROLES_GESTION_PRODUITS)
+    require_permission(db, current_user, PRODUIT_GESTION)
     if db.query(ProduitDB).filter(ProduitDB.code_barres == payload.code_barres).first():
         raise HTTPException(status_code=409, detail="Un produit avec ce code-barres existe déjà")
     p = ProduitDB(id=str(uuid.uuid4())[:8], **payload.model_dump())
@@ -76,7 +75,7 @@ def update_produit(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Produit:
-    require_role(current_user, *ROLES_GESTION_PRODUITS)
+    require_permission(db, current_user, PRODUIT_GESTION)
     p = db.get(ProduitDB, produit_id)
     if not p:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -93,7 +92,7 @@ def delete_produit(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
-    require_role(current_user, *ROLES_GESTION_PRODUITS)
+    require_permission(db, current_user, PRODUIT_GESTION)
     p = db.get(ProduitDB, produit_id)
     if not p:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -110,7 +109,7 @@ def uploader_image(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Produit:
-    require_role(current_user, *ROLES_GESTION_PRODUITS)
+    require_permission(db, current_user, PRODUIT_GESTION)
     p = db.get(ProduitDB, produit_id)
     if not p:
         raise HTTPException(status_code=404, detail="Produit introuvable")
@@ -138,7 +137,7 @@ def supprimer_image(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Produit:
-    require_role(current_user, *ROLES_GESTION_PRODUITS)
+    require_permission(db, current_user, PRODUIT_GESTION)
     p = db.get(ProduitDB, produit_id)
     if not p:
         raise HTTPException(status_code=404, detail="Produit introuvable")

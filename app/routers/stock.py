@@ -5,19 +5,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import STOCK_ECRITURE
 from app.core.security import get_current_user
 from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB, UtilisateurDB
-from app.models.schemas import MotifMouvementStock, Role, StatutEcartInventaire
+from app.models.schemas import MotifMouvementStock, StatutEcartInventaire
 from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
-
-# CDC 3.3 : la gestion du stock (ajout de ligne, mouvements manuels, inventaire) relève de la
-# supervision de boutique — vendeur/caissier ne font que consulter et vendre (stock décrémenté
-# automatiquement par la commande), responsable_achats n'a qu'un accès en lecture sur le stock.
-ROLES_STOCK_ECRITURE = (Role.gerant, Role.administrateur)
 
 
 class LigneStock(BaseModel):
@@ -96,7 +92,7 @@ def create_ligne_stock(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneStock:
-    require_role(current_user, *ROLES_STOCK_ECRITURE)
+    require_permission(db, current_user, STOCK_ECRITURE)
     assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:
@@ -135,7 +131,7 @@ def update_ligne_stock(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneStock:
-    require_role(current_user, *ROLES_STOCK_ECRITURE)
+    require_permission(db, current_user, STOCK_ECRITURE)
     assert_boutique_access(current_user, boutique_id)
     s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
     if not s:
@@ -164,7 +160,7 @@ def delete_ligne_stock(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
-    require_role(current_user, *ROLES_STOCK_ECRITURE)
+    require_permission(db, current_user, STOCK_ECRITURE)
     assert_boutique_access(current_user, boutique_id)
     s = db.get(StockBoutiqueDB, (boutique_id, produit_id))
     if not s:
@@ -203,7 +199,7 @@ def create_mouvement(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneMouvementStock:
-    require_role(current_user, *ROLES_STOCK_ECRITURE)
+    require_permission(db, current_user, STOCK_ECRITURE)
     assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:
@@ -278,7 +274,7 @@ def create_inventaire(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneEcartInventaire:
-    require_role(current_user, *ROLES_STOCK_ECRITURE)
+    require_permission(db, current_user, STOCK_ECRITURE)
     assert_boutique_access(current_user, payload.boutique_id)
     produit = db.get(ProduitDB, payload.produit_id)
     if not produit:

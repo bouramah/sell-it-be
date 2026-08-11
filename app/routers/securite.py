@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import require_admin
+from app.core.authorization import require_permission
 from app.core.database import get_db
+from app.core.module_actions import SECURITE_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import JournalAuditDB, ParametreSecuriteDB, UtilisateurDB
 from app.models.schemas import JournalAuditEntry, ParametreSecurite
@@ -19,7 +20,7 @@ def journal_audit(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> list[JournalAuditDB]:
     # Accès en lecture aux journaux d'audit réservé à l'administrateur (cf. CDC §7.3).
-    require_admin(current_user)
+    require_permission(db, current_user, SECURITE_GESTION)
     query = db.query(JournalAuditDB)
     if boutique_id:
         query = query.filter(JournalAuditDB.boutique_id == boutique_id)
@@ -31,7 +32,7 @@ def parametres_securite(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> list[ParametreSecuriteDB]:
-    require_admin(current_user)
+    require_permission(db, current_user, SECURITE_GESTION)
     return sorted(db.query(ParametreSecuriteDB).all(), key=lambda p: p.ordre)
 
 
@@ -42,7 +43,7 @@ def modifier_parametre_securite(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ParametreSecuriteDB:
-    require_admin(current_user)
+    require_permission(db, current_user, SECURITE_GESTION)
     p = db.get(ParametreSecuriteDB, parametre_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paramètre introuvable")

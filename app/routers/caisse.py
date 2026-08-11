@@ -5,15 +5,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import CAISSE_MOUVEMENT, CAISSE_OUVERTURE
 from app.core.security import get_current_user
 from app.db_models.models import CaisseDB, MouvementCaisseDB, UtilisateurDB
-from app.models.schemas import Caisse, Role, StatutCaisse, TypeMouvementCaisse
+from app.models.schemas import Caisse, StatutCaisse, TypeMouvementCaisse
 from app.models.write_schemas import CaisseCreate, CaisseFermeture, MouvementCaisseCreate
 from app.services.audit import log_audit
-
-ROLES_CAISSE = (Role.caissier, Role.gerant, Role.administrateur)
 
 router = APIRouter(prefix="/api/v1/caisse", tags=["caisse"])
 
@@ -45,7 +44,7 @@ def create_caisse(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CaisseDB:
-    require_role(current_user, *ROLES_CAISSE)
+    require_permission(db, current_user, CAISSE_OUVERTURE)
     assert_boutique_access(current_user, payload.boutique_id)
     c = CaisseDB(
         id=str(uuid.uuid4())[:8],
@@ -73,7 +72,7 @@ def fermer_caisse(
     c = db.get(CaisseDB, caisse_id)
     if not c:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
-    require_role(current_user, *ROLES_CAISSE)
+    require_permission(db, current_user, CAISSE_OUVERTURE)
     assert_boutique_access(current_user, c.boutique_id)
     c.solde_reel = payload.solde_reel
     c.statut = StatutCaisse.fermee if payload.solde_reel == c.solde_theorique else StatutCaisse.ecart_signale
@@ -99,7 +98,7 @@ def rouvrir_caisse(
     c = db.get(CaisseDB, caisse_id)
     if not c:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
-    require_role(current_user, *ROLES_CAISSE)
+    require_permission(db, current_user, CAISSE_OUVERTURE)
     assert_boutique_access(current_user, c.boutique_id)
     c.statut = StatutCaisse.ouverte
     db.commit()
@@ -139,7 +138,7 @@ def create_mouvement_caisse(
     caisse = db.get(CaisseDB, payload.caisse_id)
     if not caisse:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
-    require_role(current_user, *ROLES_CAISSE)
+    require_permission(db, current_user, CAISSE_MOUVEMENT)
     assert_boutique_access(current_user, caisse.boutique_id)
     if caisse.statut != StatutCaisse.ouverte:
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un mouvement")

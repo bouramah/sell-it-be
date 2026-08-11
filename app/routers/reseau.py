@@ -3,20 +3,17 @@ import uuid
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_admin, require_role
+from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_permission
 from app.core.database import get_db
 from app.core.db_errors import commit_or_409
+from app.core.module_actions import BOUTIQUE_GESTION, FOURNISSEUR_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB, UtilisateurDB
-from app.models.schemas import Boutique, Fournisseur, Role, StatutBoutique
+from app.models.schemas import Boutique, Fournisseur, StatutBoutique
 from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate, FournisseurCreate, FournisseurUpdate
 from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1", tags=["reseau"])
-
-# Gestion des fournisseurs = achats/procurement, pas une tâche de vente boutique — même
-# périmètre que le catalogue produits (cf. app/routers/produits.py ROLES_GESTION_PRODUITS).
-ROLES_GESTION_FOURNISSEURS = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 
 def _to_schema(b: BoutiqueDB) -> Boutique:
@@ -76,7 +73,7 @@ def create_boutique(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
-    require_admin(current_user)
+    require_permission(db, current_user, BOUTIQUE_GESTION)
     boutique_id = str(uuid.uuid4())[:8]
     b = BoutiqueDB(
         id=boutique_id,
@@ -106,7 +103,7 @@ def update_boutique(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
-    require_admin(current_user)
+    require_permission(db, current_user, BOUTIQUE_GESTION)
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")
@@ -129,7 +126,7 @@ def delete_boutique(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
-    require_admin(current_user)
+    require_permission(db, current_user, BOUTIQUE_GESTION)
     b = db.get(BoutiqueDB, boutique_id)
     if not b:
         raise HTTPException(status_code=404, detail="Boutique introuvable")
@@ -153,7 +150,7 @@ def create_fournisseur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> FournisseurDB:
-    require_role(current_user, *ROLES_GESTION_FOURNISSEURS)
+    require_permission(db, current_user, FOURNISSEUR_GESTION)
     f = FournisseurDB(id=str(uuid.uuid4())[:8], **payload.model_dump())
     db.add(f)
     db.commit()
@@ -168,7 +165,7 @@ def update_fournisseur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> FournisseurDB:
-    require_role(current_user, *ROLES_GESTION_FOURNISSEURS)
+    require_permission(db, current_user, FOURNISSEUR_GESTION)
     f = db.get(FournisseurDB, fournisseur_id)
     if not f:
         raise HTTPException(status_code=404, detail="Fournisseur introuvable")
@@ -185,7 +182,7 @@ def delete_fournisseur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> None:
-    require_role(current_user, *ROLES_GESTION_FOURNISSEURS)
+    require_permission(db, current_user, FOURNISSEUR_GESTION)
     f = db.get(FournisseurDB, fournisseur_id)
     if not f:
         raise HTTPException(status_code=404, detail="Fournisseur introuvable")

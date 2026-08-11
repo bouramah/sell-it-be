@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import DETTE_CREATION, DETTE_REMBOURSEMENT
 from app.core.security import get_current_user
 from app.db_models.models import (
     CaisseDB,
@@ -19,17 +20,12 @@ from app.db_models.models import (
     RemboursementDB,
     UtilisateurDB,
 )
-from app.models.schemas import Remboursement, Role, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.schemas import Remboursement, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 from app.services.audit import log_audit
 from app.services.sms import get_sms_provider
 
 router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
-
-# CDC 3.3 : "Enregistrer une dette/créance" — vendeur/caissier/gérant, pas responsable_achats.
-# "Enregistrer un remboursement de dette" — caissier/gérant seulement (manipulation de caisse).
-ROLES_DETTE_CREATION = (Role.vendeur, Role.caissier, Role.gerant, Role.administrateur)
-ROLES_REMBOURSEMENT = (Role.caissier, Role.gerant, Role.administrateur)
 
 
 class LigneDette(BaseModel):
@@ -73,7 +69,7 @@ def create_dette(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> LigneDette:
-    require_role(current_user, *ROLES_DETTE_CREATION)
+    require_permission(db, current_user, DETTE_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
     d = DetteDB(
         id=str(uuid.uuid4())[:8],
@@ -116,7 +112,7 @@ def encaisser_remboursement(
     d = db.get(DetteDB, dette_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dette introuvable")
-    require_role(current_user, *ROLES_REMBOURSEMENT)
+    require_permission(db, current_user, DETTE_REMBOURSEMENT)
     assert_boutique_access(current_user, d.boutique_id)
     if payload.montant > d.solde_restant:
         raise HTTPException(status_code=400, detail="Le montant dépasse le solde restant")
@@ -181,7 +177,7 @@ def envoyer_rappel_sms(
     d = db.get(DetteDB, dette_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dette introuvable")
-    require_role(current_user, *ROLES_DETTE_CREATION)
+    require_permission(db, current_user, DETTE_CREATION)
     assert_boutique_access(current_user, d.boutique_id)
 
     if d.tiers_type == TiersType.client:

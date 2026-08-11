@@ -6,8 +6,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from app.core.authorization import a_portee_reseau, apply_boutique_filter, assert_boutique_access, boutiques_autorisees, require_role
+from app.core.authorization import a_portee_reseau, apply_boutique_filter, assert_boutique_access, boutiques_autorisees, require_permission
 from app.core.database import get_db
+from app.core.module_actions import CLIENT_GESTION, ENCAISSEMENT
 from app.core.security import get_current_user
 from app.db_models.models import (
     BoutiqueDB,
@@ -21,16 +22,10 @@ from app.db_models.models import (
     PaiementFournisseurDB,
     UtilisateurDB,
 )
-from app.models.schemas import Client, PaiementClient, PaiementFournisseur, Role, StatutCaisse, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutCaisse, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementCaisseInput, PaiementClientCreate, PaiementFournisseurCreate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
-
-# CDC 3.3 : la gestion clients/paiements est une tâche de vente boutique — responsable_achats
-# (achats/stock réseau) en est exclu, tout comme l'encaissement (caisse) est réservé à
-# caissier/gérant/administrateur, le vendeur ne fait que la vente/commande.
-ROLES_CLIENT = (Role.vendeur, Role.caissier, Role.gerant, Role.administrateur)
-ROLES_ENCAISSEMENT = (Role.caissier, Role.gerant, Role.administrateur)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "paiements"
 ALLOWED_DOCUMENT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
@@ -96,7 +91,7 @@ def create_client(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Client:
-    require_role(current_user, *ROLES_CLIENT)
+    require_permission(db, current_user, CLIENT_GESTION)
     _assert_client_boutiques_access(current_user, payload.boutique_ids)
     data = payload.model_dump(exclude={"boutique_ids"})
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
@@ -117,7 +112,7 @@ def update_client(
     c = db.get(ClientDB, client_id)
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
-    require_role(current_user, *ROLES_CLIENT)
+    require_permission(db, current_user, CLIENT_GESTION)
     _assert_client_boutiques_access(current_user, [b.id for b in c.boutiques])
     if payload.boutique_ids is not None:
         _assert_client_boutiques_access(current_user, payload.boutique_ids)
@@ -140,7 +135,7 @@ def delete_client(
     c = db.get(ClientDB, client_id)
     if not c:
         raise HTTPException(status_code=404, detail="Client introuvable")
-    require_role(current_user, *ROLES_CLIENT)
+    require_permission(db, current_user, CLIENT_GESTION)
     _assert_client_boutiques_access(current_user, [b.id for b in c.boutiques])
     db.delete(c)
     db.commit()
@@ -198,7 +193,7 @@ def create_paiement_client(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementClientDB:
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, payload.boutique_id)
     statut = StatutPaiement.encaisse
     reference = "Paiement direct"
@@ -240,7 +235,7 @@ def create_paiement_fournisseur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> PaiementFournisseurDB:
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, payload.boutique_id)
     statut = StatutPaiement.paye
     reference = "Paiement direct"
@@ -285,7 +280,7 @@ def encaisser_paiement_client(
     p = db.get(PaiementClientDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
     if p.statut in (StatutPaiement.encaisse, StatutPaiement.paye):
         raise HTTPException(status_code=400, detail="Ce paiement est déjà encaissé")
@@ -314,7 +309,7 @@ def marquer_paiement_fournisseur_paye(
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
     if p.statut == StatutPaiement.paye:
         raise HTTPException(status_code=400, detail="Ce paiement est déjà réglé")
@@ -343,7 +338,7 @@ def uploader_document_paiement_fournisseur(
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
@@ -373,7 +368,7 @@ def supprimer_document_paiement_fournisseur(
     p = db.get(PaiementFournisseurDB, paiement_id)
     if not p:
         raise HTTPException(status_code=404, detail="Paiement introuvable")
-    require_role(current_user, *ROLES_ENCAISSEMENT)
+    require_permission(db, current_user, ENCAISSEMENT)
     assert_boutique_access(current_user, p.boutique_id)
     if p.document_url:
         _delete_document_file(p.document_url)

@@ -4,8 +4,9 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import COMMANDE_CLIENT, COMMANDE_FOURNISSEUR_CREATION, COMMANDE_FOURNISSEUR_RECEPTION
 from app.core.security import get_current_user
 from app.db_models.models import (
     CommandeClientDB,
@@ -29,7 +30,6 @@ from app.models.schemas import (
     LigneCommandeFournisseur,
     ModePaiement,
     MotifMouvementStock,
-    Role,
     StatutCommandeClient,
     StatutCommandeFournisseur,
     StatutPaiement,
@@ -44,11 +44,6 @@ from app.models.write_schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
-
-ROLES_COMMANDE_FOURNISSEUR = (Role.gerant, Role.responsable_achats, Role.administrateur)
-# CDC 3.3 : la commande client est un acte de vente boutique — responsable_achats (achats/stock
-# réseau) en est explicitement exclu, contrairement à vendeur/caissier/gérant.
-ROLES_COMMANDE_CLIENT = (Role.vendeur, Role.caissier, Role.gerant, Role.administrateur)
 
 
 def _produits_by_id(db: Session, ids: set[str]) -> dict[str, ProduitDB]:
@@ -96,7 +91,7 @@ def create_commande_client(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeClientDetail:
-    require_role(current_user, *ROLES_COMMANDE_CLIENT)
+    require_permission(db, current_user, COMMANDE_CLIENT)
     assert_boutique_access(current_user, payload.boutique_id)
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
@@ -143,7 +138,7 @@ def update_commande_client(
     c = db.get(CommandeClientDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    require_role(current_user, *ROLES_COMMANDE_CLIENT)
+    require_permission(db, current_user, COMMANDE_CLIENT)
     assert_boutique_access(current_user, c.boutique_id)
 
     ancien_statut = c.statut
@@ -255,7 +250,7 @@ def create_commande_fournisseur(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> CommandeFournisseurDetail:
-    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    require_permission(db, current_user, COMMANDE_FOURNISSEUR_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
@@ -286,7 +281,7 @@ def update_commande_fournisseur(
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    require_permission(db, current_user, COMMANDE_FOURNISSEUR_CREATION)
     assert_boutique_access(current_user, c.boutique_id)
 
     data = payload.model_dump(exclude_unset=True)
@@ -324,7 +319,7 @@ def receptionner_commande_fournisseur(
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    require_permission(db, current_user, COMMANDE_FOURNISSEUR_RECEPTION)
     assert_boutique_access(current_user, c.boutique_id)
     if not payload.lignes:
         raise HTTPException(status_code=400, detail="Aucune ligne à réceptionner")
@@ -385,7 +380,7 @@ def corriger_reception_commande_fournisseur(
     c = db.get(CommandeFournisseurDB, commande_id)
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
-    require_role(current_user, *ROLES_COMMANDE_FOURNISSEUR)
+    require_permission(db, current_user, COMMANDE_FOURNISSEUR_RECEPTION)
     assert_boutique_access(current_user, c.boutique_id)
     if not payload.lignes:
         raise HTTPException(status_code=400, detail="Aucune ligne à corriger")

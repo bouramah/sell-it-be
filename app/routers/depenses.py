@@ -5,11 +5,12 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from app.core.authorization import ROLES_PORTEE_RESEAU, apply_boutique_filter, assert_boutique_access, require_role
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
+from app.core.module_actions import DEPENSE_CREATION, DEPENSE_VALIDATION_SEUIL
 from app.core.security import get_current_user
 from app.db_models.models import CaisseDB, DepenseDB, MouvementCaisseDB, UtilisateurDB
-from app.models.schemas import Depense, Role, StatutCaisse, StatutValidationDepense, TypeMouvementCaisse
+from app.models.schemas import Depense, StatutCaisse, StatutValidationDepense, TypeMouvementCaisse
 from app.models.write_schemas import DepenseCreate
 from app.services.audit import log_audit
 
@@ -17,9 +18,6 @@ router = APIRouter(prefix="/api/v1/depenses", tags=["depenses"])
 
 # Au-delà de ce montant, une dépense doit être validée par le siège (double validation, cf. CDC anti-fraude).
 SEUIL_VALIDATION_SIEGE = 500_000
-
-# CDC 3.3 : "Enregistrer une dépense de boutique" = gérant (+ administrateur) seulement.
-ROLES_DEPENSE_CREATION = (Role.gerant, Role.administrateur)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "depenses"
 ALLOWED_DOCUMENT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
@@ -48,7 +46,7 @@ def create_depense(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DepenseDB:
-    require_role(current_user, *ROLES_DEPENSE_CREATION)
+    require_permission(db, current_user, DEPENSE_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
     caisse = db.get(CaisseDB, payload.caisse_id)
     if not caisse:
@@ -91,7 +89,7 @@ def valider_depense(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
-    require_role(current_user, *ROLES_PORTEE_RESEAU)
+    require_permission(db, current_user, DEPENSE_VALIDATION_SEUIL)
     if d.statut_validation != StatutValidationDepense.en_attente:
         raise HTTPException(status_code=400, detail="Cette dépense n'est pas en attente de validation")
     d.statut_validation = StatutValidationDepense.validee_siege
@@ -116,7 +114,7 @@ def uploader_justificatif(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
-    require_role(current_user, *ROLES_DEPENSE_CREATION)
+    require_permission(db, current_user, DEPENSE_CREATION)
     assert_boutique_access(current_user, d.boutique_id)
 
     ext = ALLOWED_DOCUMENT_TYPES.get(file.content_type or "")
@@ -146,7 +144,7 @@ def supprimer_justificatif(
     d = db.get(DepenseDB, depense_id)
     if not d:
         raise HTTPException(status_code=404, detail="Dépense introuvable")
-    require_role(current_user, *ROLES_DEPENSE_CREATION)
+    require_permission(db, current_user, DEPENSE_CREATION)
     assert_boutique_access(current_user, d.boutique_id)
     if d.justificatif_url:
         _delete_justificatif_file(d.justificatif_url)

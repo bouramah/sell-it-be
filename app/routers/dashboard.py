@@ -5,8 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends
-from app.core.authorization import ROLES_PORTEE_RESEAU, a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_role
+from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_permission
 from app.core.database import get_db
+from app.core.module_actions import DASHBOARD_BOUTIQUE, DASHBOARD_RESEAU
 from app.core.security import get_current_user
 from app.db_models.models import (
     BoutiqueDB,
@@ -26,7 +27,6 @@ from app.db_models.models import (
 from app.models.schemas import (
     CanalCommande,
     ModePaiement,
-    Role,
     StatutBoutique,
     StatutCaisse,
     StatutCommandeClient,
@@ -36,10 +36,6 @@ from app.models.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
-
-# CDC 3.3 : "Consulter le dashboard de sa boutique" — gérant, responsable achats, administrateur
-# uniquement. Vendeur/caissier n'ont pas accès au dashboard, même pour leur propre boutique.
-ROLES_DASHBOARD_BOUTIQUE = (Role.gerant, Role.responsable_achats, Role.administrateur)
 
 
 def _boutique_scope(current_user: UtilisateurDB, boutique_id: str | None) -> list[str] | None:
@@ -90,7 +86,7 @@ def get_dashboard(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DashboardConsolide:
     # Dashboard consolidé réseau — réservé au siège (cf. CDC : "Consulter le dashboard consolidé siège").
-    require_role(current_user, *ROLES_PORTEE_RESEAU)
+    require_permission(db, current_user, DASHBOARD_RESEAU)
     today = date.today()
 
     all_stock = db.query(StockBoutiqueDB).all()
@@ -258,7 +254,7 @@ def get_dashboard_kpis(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> DashboardKpis:
-    require_role(current_user, *ROLES_DASHBOARD_BOUTIQUE)
+    require_permission(db, current_user, DASHBOARD_BOUTIQUE)
     scope = _boutique_scope(current_user, boutique_id)
     debut_date, fin_date = debut.date(), fin.date()
 

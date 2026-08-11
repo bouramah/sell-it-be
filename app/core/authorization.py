@@ -9,9 +9,10 @@ Rôles à portée réseau (accès à toutes les boutiques) : administrateur, res
 Rôles à portée boutique (limités à leurs boutiques de rattachement) : vendeur, caissier, gérant.
 """
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 
-from app.db_models.models import UtilisateurDB
-from app.models.schemas import Role
+from app.db_models.models import PermissionDB, UtilisateurDB
+from app.models.schemas import DroitAcces, Role
 
 ROLES_PORTEE_RESEAU = {Role.administrateur, Role.responsable_achats}
 
@@ -62,10 +63,30 @@ def apply_boutique_filter(query, column, user: UtilisateurDB, boutique_id: str |
     return query.filter(column == filtre)
 
 
-def require_role(user: UtilisateurDB, *roles: Role) -> None:
-    if user.role not in roles:
-        raise HTTPException(status_code=403, detail="Action réservée à un autre rôle")
+def require_permission(db: Session, user: UtilisateurDB, *module_actions: str) -> None:
+    """Vérifie que l'utilisateur a un droit non 'aucun' sur au moins une des actions
+    données, en interrogeant en direct la matrice des droits (table `permissions`).
 
+    C'est cette table — modifiable depuis Utilisateurs & droits, sans développement —
+    qui fait foi pour l'autorisation, pas un rôle codé en dur (cf. CDC §3.3 : "cette
+    matrice sera formalisée en base de données sous forme de permissions granulaires...
+    afin de permettre la création de rôles personnalisés sans développement
+    supplémentaire"). Plusieurs module_actions peuvent être passés quand une même route
+    sert plusieurs lignes de la matrice (ex. comptabilité "de sa boutique" vs
+    "consolidée du réseau") — l'accès est autorisé si l'une d'elles n'est pas 'aucun'.
 
-def require_admin(user: UtilisateurDB) -> None:
-    require_role(user, Role.administrateur)
+    L'administrateur passe toujours, sans consulter la table : la matrice elle-même est
+    modifiable uniquement par un administrateur (cf. "Gérer les droits utilisateurs"), donc
+    si ce contournement n'existait pas, une ligne mal configurée (ex. administrateur → "Gérer
+    les droits utilisateurs" → aucun) verrouillerait tout le monde hors de l'écran qui permet
+    de la corriger. Conforme au critère d'acceptation #2 du CDC : "L'administrateur peut
+    consulter et agir sur l'ensemble des boutiques sans restriction"."""
+    if user.role == Role.administrateur:
+        return
+    rows = (
+        db.query(PermissionDB)
+        .filter(PermissionDB.module_action.in_(module_actions), PermissionDB.role == user.role)
+        .all()
+    )
+    if not rows or all(r.droit == DroitAcces.aucun for r in rows):
+        raise HTTPException(status_code=403, detail="Action non autorisée pour votre rôle")
