@@ -20,6 +20,7 @@ from app.routers import (
     produits,
     promotions,
     reseau,
+    roles,
     securite,
     stock,
     transferts,
@@ -46,6 +47,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 app.include_router(auth.router)
 app.include_router(reseau.router)
 app.include_router(utilisateurs.router)
+app.include_router(roles.router)
 app.include_router(produits.router)
 app.include_router(clients.router)
 app.include_router(stock.router)

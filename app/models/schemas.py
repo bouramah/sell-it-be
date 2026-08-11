@@ -9,20 +9,17 @@ from pydantic import BaseModel
 # Secteur n'est plus un enum fixe : c'est un référentiel géré (catégorie
 # "secteurs" dans la table referentiels), au même titre que quartiers/villes.
 # Les champs "secteur"/"secteurs" ci-dessous sont donc de simples str.
+#
+# Role n'est plus non plus un enum fixe : c'est une entité en base (table
+# `roles` — id, libellé, portée), créable/modifiable depuis Utilisateurs &
+# droits sans développement, cf. CDC §3.3. Les champs "role" ci-dessous sont
+# donc de simples str (l'id du rôle) ; voir RoleInfo pour le schéma complet.
 
 
 class StatutBoutique(str, Enum):
     active = "active"
     fermee = "fermee"
     en_creation = "en_creation"
-
-
-class Role(str, Enum):
-    vendeur = "vendeur"
-    caissier = "caissier"
-    gerant = "gerant"
-    responsable_achats = "responsable_achats"
-    administrateur = "administrateur"
 
 
 class DroitAcces(str, Enum):
@@ -178,7 +175,7 @@ class Utilisateur(BaseModel):
     nom: str
     prenom: str
     contact: str
-    role: Role
+    role: str
     boutique_ids: list[str]
     statut: str
     derniere_connexion: datetime | None = None
@@ -186,7 +183,14 @@ class Utilisateur(BaseModel):
 
 class PermissionLigne(BaseModel):
     module_action: str
-    droits: dict[Role, DroitAcces]
+    droits: dict[str, DroitAcces]
+
+
+class RoleInfo(BaseModel):
+    id: str
+    libelle: str
+    portee: str
+    systeme: bool
 
 
 # --- Clients & paiements ----------------------------------------------------

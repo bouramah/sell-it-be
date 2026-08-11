@@ -10,7 +10,6 @@ from app.models.schemas import (
     MotifMouvementStock,
     ModePaiement,
     OriginePromotion,
-    Role,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -77,6 +76,21 @@ class BoutiqueSecteurDB(Base):
     boutique: Mapped["BoutiqueDB"] = relationship(back_populates="secteurs")
 
 
+class RoleDB(Base):
+    """Rôles applicatifs, en base plutôt qu'en code — cf. CDC §3.3 : "id, libellé, liste des
+    droits (matrice), portée (boutique / multi-boutique / global siège)". La portée n'a que
+    deux valeurs utiles ici : "boutique" (limité aux boutiques de rattachement de
+    l'utilisateur, une ou plusieurs) et "reseau" (l'ensemble du réseau, cf. critère
+    d'acceptation #2)."""
+    __tablename__ = "roles"
+
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    libelle: Mapped[str] = mapped_column(String(120))
+    portee: Mapped[str] = mapped_column(String(20))
+    ordre: Mapped[int] = mapped_column(Integer, default=0)
+    systeme: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class UtilisateurDB(Base):
     __tablename__ = "utilisateurs"
 
@@ -85,10 +99,11 @@ class UtilisateurDB(Base):
     prenom: Mapped[str] = mapped_column(String(120))
     contact: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     mot_de_passe_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[Role] = mapped_column(Enum(Role))
+    role: Mapped[str] = mapped_column(String(60), ForeignKey("roles.id"))
     statut: Mapped[str] = mapped_column(String(20), default="actif")
     derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    role_ref: Mapped["RoleDB"] = relationship(foreign_keys=[role], lazy="joined")
     boutiques: Mapped[list["BoutiqueDB"]] = relationship(
         secondary=utilisateur_boutiques, back_populates="utilisateurs"
     )
@@ -375,7 +390,7 @@ class PermissionDB(Base):
     __tablename__ = "permissions"
 
     module_action: Mapped[str] = mapped_column(String(160), primary_key=True)
-    role: Mapped[Role] = mapped_column(Enum(Role), primary_key=True)
+    role: Mapped[str] = mapped_column(String(60), ForeignKey("roles.id"), primary_key=True)
     droit: Mapped[DroitAcces] = mapped_column(Enum(DroitAcces))
     ordre: Mapped[int] = mapped_column(Integer, default=0)
 

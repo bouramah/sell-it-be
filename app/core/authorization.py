@@ -5,20 +5,21 @@ modifier les données d'une boutique à laquelle il n'est pas rattaché."
 Critère d'acceptation #2 : "L'administrateur peut consulter et agir sur l'ensemble des
 boutiques sans restriction."
 
-Rôles à portée réseau (accès à toutes les boutiques) : administrateur, responsable_achats.
-Rôles à portée boutique (limités à leurs boutiques de rattachement) : vendeur, caissier, gérant.
+Les rôles sont des données (table `roles`, cf. app/routers/roles.py), pas un enum codé en
+dur — leur portée ("boutique" = limité aux boutiques de rattachement, "reseau" = ensemble
+du réseau) vient de RoleDB.portee, chargée via UtilisateurDB.role_ref.
 """
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.db_models.models import PermissionDB, UtilisateurDB
-from app.models.schemas import DroitAcces, Role
+from app.models.schemas import DroitAcces
 
-ROLES_PORTEE_RESEAU = {Role.administrateur, Role.responsable_achats}
+ROLE_ADMINISTRATEUR = "administrateur"
 
 
 def a_portee_reseau(user: UtilisateurDB) -> bool:
-    return user.role in ROLES_PORTEE_RESEAU
+    return user.role_ref.portee == "reseau"
 
 
 def boutiques_autorisees(user: UtilisateurDB) -> set[str]:
@@ -81,7 +82,7 @@ def require_permission(db: Session, user: UtilisateurDB, *module_actions: str) -
     les droits utilisateurs" → aucun) verrouillerait tout le monde hors de l'écran qui permet
     de la corriger. Conforme au critère d'acceptation #2 du CDC : "L'administrateur peut
     consulter et agir sur l'ensemble des boutiques sans restriction"."""
-    if user.role == Role.administrateur:
+    if user.role == ROLE_ADMINISTRATEUR:
         return
     rows = (
         db.query(PermissionDB)

@@ -7,7 +7,6 @@ from app.models.schemas import (
     DroitAcces,
     MotifMouvementStock,
     ModePaiement,
-    Role,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -56,7 +55,7 @@ class UtilisateurCreate(BaseModel):
     prenom: str
     contact: str
     mot_de_passe: str | None = None
-    role: Role
+    role: str
     boutique_ids: list[str] = []
     statut: str = "actif"
 
@@ -66,7 +65,7 @@ class UtilisateurUpdate(BaseModel):
     prenom: str | None = None
     contact: str | None = None
     mot_de_passe: str | None = None
-    role: Role | None = None
+    role: str | None = None
     boutique_ids: list[str] | None = None
     statut: str | None = None
 
@@ -323,7 +322,7 @@ class PromotionStatutUpdate(BaseModel):
 
 class PermissionUpdate(BaseModel):
     module_action: str
-    role: Role
+    role: str
     droit: DroitAcces
 
 
@@ -333,6 +332,17 @@ class ReferentielCreate(BaseModel):
 
 class ReferentielUpdate(BaseModel):
     nom: str
+
+
+class RoleCreate(BaseModel):
+    id: str
+    libelle: str
+    portee: str
+
+
+class RoleUpdate(BaseModel):
+    libelle: str | None = None
+    portee: str | None = None
 
 
 class ParametreSecuriteUpdate(BaseModel):
@@ -364,5 +374,5 @@ class UtilisateurConnecte(BaseModel):
     nom: str
     prenom: str
     contact: str
-    role: Role
+    role: str
     boutique_ids: list[str]

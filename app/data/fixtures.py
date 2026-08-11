@@ -21,7 +21,6 @@ from app.models.schemas import (
     Promotion,
     ReferentielItem,
     Remboursement,
-    Role,
     StatutBoutique,
     StatutCaisse,
     StatutCommandeClient,
@@ -37,7 +36,6 @@ from app.models.schemas import (
     TiersType,
     TransfertStock,
     TypeMouvementCaisse,
-    Utilisateur,
 )
 
 # --- Réseau ------------------------------------------------------------------
@@ -122,18 +120,8 @@ FOURNISSEURS: list[Fournisseur] = [
     Fournisseur(id="grossiste-kaloum", nom="Grossiste Kaloum", secteur="habillement", conditions_paiement="Comptant", contact="620 77 88 99"),
 ]
 
-UTILISATEURS: list[Utilisateur] = [
-    Utilisateur(id="usr-condé", nom="Condé", prenom="Sékou", contact="620191920", role=Role.administrateur, boutique_ids=[b.id for b in BOUTIQUES], statut="actif", derniere_connexion=datetime(2026, 8, 8, 11, 2)),
-    Utilisateur(id="usr-bah-f", nom="Bah", prenom="Fatoumata", contact="620000001", role=Role.gerant, boutique_ids=["lansanaya"], statut="actif", derniere_connexion=datetime(2026, 8, 8, 8, 12)),
-    Utilisateur(id="usr-sow", nom="Sow", prenom="Ibrahima", contact="622112233", role=Role.gerant, boutique_ids=["madina"], statut="actif", derniere_connexion=datetime(2026, 8, 8, 7, 58)),
-    Utilisateur(id="usr-camara", nom="Camara", prenom="Alpha", contact="628556677", role=Role.gerant, boutique_ids=["matam"], statut="actif", derniere_connexion=datetime(2026, 8, 8, 9, 5)),
-    Utilisateur(id="usr-diane", nom="Diané", prenom="Aboubacar", contact="620778899", role=Role.gerant, boutique_ids=["kaloum"], statut="actif", derniere_connexion=datetime(2026, 8, 7, 20, 30)),
-    Utilisateur(id="usr-diallo", nom="Diallo", prenom="Mariama", contact="623445566", role=Role.caissier, boutique_ids=["kankan"], statut="actif", derniere_connexion=datetime(2026, 8, 7, 18, 40)),
-    Utilisateur(id="usr-keita", nom="Keita", prenom="Mamadouba", contact="625001122", role=Role.responsable_achats, boutique_ids=[b.id for b in BOUTIQUES], statut="actif", derniere_connexion=datetime(2026, 8, 8, 10, 20)),
-    Utilisateur(id="usr-bah-s", nom="Bah", prenom="Souleymane", contact="621998877", role=Role.vendeur, boutique_ids=["kaloum"], statut="inactif", derniere_connexion=datetime(2026, 7, 7, 9, 47)),
-]
-
-# Les permissions par rôle vivent désormais en base (table `permissions`, voir la migration
+# Les utilisateurs et les permissions par rôle vivent désormais en base (tables
+# `utilisateurs`/`roles`/`permissions`, voir la migration
 # b9ce75de0497) pour rester modifiables depuis Paramètres sans déploiement.
 
 # --- Clients & paiements --------------------------------------------------------
