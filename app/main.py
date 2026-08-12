@@ -35,7 +35,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # 5173 = back-office web ; 8081 = app mobile en mode debug web (Expo). Le natif
+    # (iOS/Android) n'est pas soumis au CORS, cette liste ne concerne que le navigateur.
+    allow_origins=["http://localhost:5173", "http://localhost:8081"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
