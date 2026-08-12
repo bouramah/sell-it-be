@@ -336,6 +336,7 @@ class LivraisonDB(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     commande_id: Mapped[str] = mapped_column(String(40), ForeignKey("commandes_clients.id"))
     livreur: Mapped[str] = mapped_column(String(160))
+    livreur_user_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("utilisateurs.id"), nullable=True)
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     adresse: Mapped[str] = mapped_column(String(255))
     creneau: Mapped[str] = mapped_column(String(80))

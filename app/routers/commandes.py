@@ -47,6 +47,30 @@ from app.services.notifications import nom_boutique, notifier_client, notifier_g
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
 
 
+def appliquer_livraison_stock(
+    db: Session, c: CommandeClientDB, ancien_statut: StatutCommandeClient, operateur: str
+) -> None:
+    """Sort réellement la marchandise du stock lors du passage d'une commande à 'livrée'
+    (et libère la réservation si elle existait), avec mouvement de stock motivé — cf. CDC
+    3.4. Le statut de la commande doit déjà avoir été mis à jour par l'appelant ; on lui
+    passe le statut PRÉCÉDENT pour savoir si une réservation était active. Réutilisée par
+    la mise à jour directe d'une commande et par l'affectation de statut d'une livraison."""
+    etait_reservee = ancien_statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree)
+    now = datetime.now(timezone.utc)
+    for l in c.lignes:
+        stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
+        if stock:
+            stock.quantite_disponible -= l.quantite
+            if etait_reservee:
+                stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
+            stock.derniere_mouvement = now
+        db.add(MouvementStockDB(
+            id=str(uuid.uuid4())[:8], horodatage=now, produit_id=l.produit_id, boutique_id=c.boutique_id,
+            motif=MotifMouvementStock.commande_client,
+            operateur=operateur, quantite=-l.quantite,
+        ))
+
+
 def _produits_by_id(db: Session, ids: set[str]) -> dict[str, ProduitDB]:
     produits = {p.id: p for p in db.query(ProduitDB).filter(ProduitDB.id.in_(ids)).all()}
     manquants = ids - produits.keys()
@@ -194,19 +218,7 @@ def update_commande_client(
 
     # Livraison : la marchandise quitte réellement le stock — motif obligatoire (cf. CDC 3.4).
     if c.statut == StatutCommandeClient.livree and ancien_statut != StatutCommandeClient.livree:
-        now = datetime.now(timezone.utc)
-        for l in c.lignes:
-            stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
-            if stock:
-                stock.quantite_disponible -= l.quantite
-                if etait_reservee:
-                    stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
-                stock.derniere_mouvement = now
-            db.add(MouvementStockDB(
-                id=str(uuid.uuid4())[:8], horodatage=now, produit_id=l.produit_id, boutique_id=c.boutique_id,
-                motif=MotifMouvementStock.commande_client,
-                operateur=f"{current_user.prenom} {current_user.nom}", quantite=-l.quantite,
-            ))
+        appliquer_livraison_stock(db, c, ancien_statut, f"{current_user.prenom} {current_user.nom}")
     # Annulation d'une commande encore en cours : libère la réservation, rien n'a physiquement bougé.
     elif c.statut == StatutCommandeClient.annulee and etait_reservee and ancien_statut != StatutCommandeClient.annulee:
         for l in c.lignes:

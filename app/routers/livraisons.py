@@ -11,6 +11,7 @@ from app.core.security import get_current_user
 from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
 from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison
 from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
+from app.routers.commandes import appliquer_livraison_stock
 from app.services.notifications import nom_boutique, notifier_client
 
 router = APIRouter(prefix="/api/v1/livraisons", tags=["livraisons"])
@@ -29,9 +30,12 @@ def _delete_preuve_file(url: str) -> None:
 @router.get("", response_model=list[Livraison])
 def list_livraisons(
     boutique_id: str | None = None,
+    mine: bool = False,
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> list[LivraisonDB]:
+    if mine:
+        return db.query(LivraisonDB).filter(LivraisonDB.livreur_user_id == current_user.id).all()
     query = apply_boutique_filter(db.query(LivraisonDB), LivraisonDB.boutique_id, current_user, boutique_id)
     return query.all()
 
@@ -47,8 +51,17 @@ def create_livraison(
     commande = db.get(CommandeClientDB, payload.commande_id)
     if not commande:
         raise HTTPException(status_code=404, detail="Commande introuvable")
+
+    livreur_nom = payload.livreur
+    if payload.livreur_user_id:
+        livreur_utilisateur = db.get(UtilisateurDB, payload.livreur_user_id)
+        if not livreur_utilisateur:
+            raise HTTPException(status_code=404, detail="Compte livreur introuvable")
+        livreur_nom = f"{livreur_utilisateur.prenom} {livreur_utilisateur.nom}"
+
     l = LivraisonDB(
-        id=str(uuid.uuid4())[:8], commande_id=payload.commande_id, livreur=payload.livreur,
+        id=str(uuid.uuid4())[:8], commande_id=payload.commande_id, livreur=livreur_nom,
+        livreur_user_id=payload.livreur_user_id,
         boutique_id=payload.boutique_id, adresse=payload.adresse, creneau=payload.creneau,
         statut=StatutLivraison.preparee,
     )
@@ -80,7 +93,9 @@ def update_statut(
     l.statut = payload.statut
     commande = db.get(CommandeClientDB, l.commande_id)
     if payload.statut == StatutLivraison.livree:
-        if commande and commande.statut != StatutCommandeClient.annulee:
+        if commande and commande.statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree):
+            ancien_statut_commande = commande.statut
+            appliquer_livraison_stock(db, commande, ancien_statut_commande, f"{current_user.prenom} {current_user.nom}")
             commande.statut = StatutCommandeClient.livree
     db.commit()
     db.refresh(l)

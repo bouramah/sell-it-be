@@ -267,6 +267,7 @@ class TransfertStatutUpdate(BaseModel):
 class LivraisonCreate(BaseModel):
     commande_id: str
     livreur: str = ""
+    livreur_user_id: str | None = None
     boutique_id: str
     adresse: str
     creneau: str
