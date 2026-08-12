@@ -8,9 +8,10 @@ from app.core.authorization import a_portee_reseau, boutiques_autorisees, requir
 from app.core.database import get_db
 from app.core.module_actions import TRANSFERT_DEMANDE, TRANSFERT_RECEPTION, TRANSFERT_VALIDATION
 from app.core.security import get_current_user
-from app.db_models.models import MouvementStockDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
+from app.db_models.models import MouvementStockDB, ProduitDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
 from app.models.schemas import MotifMouvementStock, StatutTransfert, TransfertStock
 from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate
+from app.services.notifications import nom_boutique, notifier_gerants_boutique
 
 router = APIRouter(prefix="/api/v1/transferts", tags=["transferts"])
 
@@ -81,6 +82,16 @@ def update_statut(
     t.statut = payload.statut
     db.commit()
     db.refresh(t)
+
+    if payload.statut == StatutTransfert.recu:
+        produit = db.get(ProduitDB, t.produit_id)
+        notifier_gerants_boutique(
+            db, t.boutique_destination_id,
+            f"Transfert de stock reçu à {nom_boutique(db, t.boutique_destination_id)} : "
+            f"{t.quantite} x {produit.nom if produit else t.produit_id} en provenance de "
+            f"{nom_boutique(db, t.boutique_source_id)}. — KFSTORE",
+        )
+
     return t
 
 

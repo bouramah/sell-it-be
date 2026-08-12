@@ -42,6 +42,7 @@ from app.models.write_schemas import (
     CorrectionReceptionCreate,
     ReceptionCreate,
 )
+from app.services.notifications import nom_boutique, notifier_client, notifier_gerants_boutique
 
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
 
@@ -125,6 +126,13 @@ def create_commande_client(
                 stock.quantite_reservee += a.quantite
 
     db.commit()
+
+    notifier_client(
+        db, c.client_nom,
+        f"Bonjour {c.client_nom}, votre commande #{c.id} chez {nom_boutique(db, c.boutique_id)} a bien été reçue "
+        f"({montant:,.0f} GNF). Nous vous tiendrons informé de son statut. — KFSTORE".replace(",", " "),
+    )
+
     return get_commande_client(c.id, db, current_user)
 
 
@@ -354,7 +362,8 @@ def receptionner_commande_fournisseur(
             motif=MotifMouvementStock.achat_reception_fournisseur, operateur=payload.operateur, quantite=r.quantite,
         ))
 
-    if all(l.quantite_recue >= l.quantite for l in c.lignes):
+    complet = all(l.quantite_recue >= l.quantite for l in c.lignes)
+    if complet:
         c.statut = StatutCommandeFournisseur.receptionnee
         c.date_reception = date.today()
         fournisseur = db.get(FournisseurDB, c.fournisseur_id)
@@ -367,6 +376,13 @@ def receptionner_commande_fournisseur(
         c.statut = StatutCommandeFournisseur.receptionnee_partielle
 
     db.commit()
+
+    etat = "réceptionnée intégralement" if complet else "réceptionnée partiellement"
+    notifier_gerants_boutique(
+        db, c.boutique_id,
+        f"Commande fournisseur #{c.id} {etat} pour {nom_boutique(db, c.boutique_id)}. — KFSTORE",
+    )
+
     return get_commande_fournisseur(commande_id, db, current_user)
 
 

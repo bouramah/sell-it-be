@@ -11,6 +11,7 @@ from app.core.security import get_current_user
 from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
 from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison
 from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
+from app.services.notifications import nom_boutique, notifier_client
 
 router = APIRouter(prefix="/api/v1/livraisons", tags=["livraisons"])
 
@@ -54,6 +55,13 @@ def create_livraison(
     db.add(l)
     db.commit()
     db.refresh(l)
+
+    notifier_client(
+        db, commande.client_nom,
+        f"Bonjour {commande.client_nom}, votre commande #{commande.id} a été affectée à un livreur. "
+        f"Créneau : {l.creneau}. Adresse : {l.adresse}. — KFSTORE",
+    )
+
     return l
 
 
@@ -70,12 +78,26 @@ def update_statut(
     require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, l.boutique_id)
     l.statut = payload.statut
+    commande = db.get(CommandeClientDB, l.commande_id)
     if payload.statut == StatutLivraison.livree:
-        commande = db.get(CommandeClientDB, l.commande_id)
         if commande and commande.statut != StatutCommandeClient.annulee:
             commande.statut = StatutCommandeClient.livree
     db.commit()
     db.refresh(l)
+
+    if commande and payload.statut == StatutLivraison.livree:
+        notifier_client(
+            db, commande.client_nom,
+            f"Bonjour {commande.client_nom}, votre commande #{commande.id} a été livrée avec succès. "
+            f"Merci de votre confiance ! — KFSTORE",
+        )
+    elif commande and payload.statut == StatutLivraison.echec:
+        notifier_client(
+            db, commande.client_nom,
+            f"Bonjour {commande.client_nom}, la livraison de votre commande #{commande.id} a rencontré un problème. "
+            f"La boutique {nom_boutique(db, l.boutique_id)} va vous recontacter. — KFSTORE",
+        )
+
     return l
 
 
