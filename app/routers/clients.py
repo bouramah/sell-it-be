@@ -59,6 +59,7 @@ def _to_schema(c: ClientDB, db: Session) -> Client:
         quartier=c.quartier,
         commune=c.commune,
         ville=c.ville,
+        secteur_geo_id=c.secteur_geo_id,
     )
 
 
@@ -95,7 +96,8 @@ def create_client(
     _assert_client_boutiques_access(current_user, payload.boutique_ids)
     data = payload.model_dump(exclude={"boutique_ids"})
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
-    c = ClientDB(id=str(uuid.uuid4())[:8], boutiques=boutiques, **data)
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    c = ClientDB(id=str(uuid.uuid4())[:8], boutiques=boutiques, created_by=auteur, updated_by=auteur, **data)
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -121,6 +123,7 @@ def update_client(
         setattr(c, field, value)
     if payload.boutique_ids is not None:
         c.boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
+    c.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(c)
     return _to_schema(c, db)

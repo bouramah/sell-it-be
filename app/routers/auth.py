@@ -10,8 +10,10 @@ from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user, hash_password, verify_password
 from app.db_models.models import OtpCodeDB, UtilisateurDB
 from app.models.write_schemas import (
+    ChangementMotDePasseRequest,
     LoginRequest,
     MotDePasseOublieRequest,
+    PushTokenUpdate,
     ReinitialisationMotDePasseRequest,
     TokenResponse,
     UtilisateurConnecte,
@@ -42,7 +44,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         log_audit(db, "Connexion refusée — compte inactif", f"{user.prenom} {user.nom}")
         db.commit()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Compte inactif")
+    user.derniere_connexion = datetime.now(timezone.utc)
     token = create_access_token(subject=user.contact)
+    db.commit()
     return TokenResponse(access_token=token)
 
 
@@ -56,6 +60,37 @@ def moi(current_user: UtilisateurDB = Depends(get_current_user)) -> UtilisateurC
         role=current_user.role,
         boutique_ids=[b.id for b in current_user.boutiques],
     )
+
+
+@router.put("/moi/push-token", response_model=MessageResponse)
+def enregistrer_push_token(
+    payload: PushTokenUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> MessageResponse:
+    """Enregistre (ou efface, si null — déconnexion) le token push Expo de
+    l'appareil courant pour l'utilisateur connecté. Self-service : aucune
+    permission particulière, chacun ne gère que son propre token."""
+    current_user.push_token = payload.push_token
+    db.commit()
+    return MessageResponse(message="Token push enregistré")
+
+
+@router.put("/moi/mot-de-passe", response_model=MessageResponse)
+def changer_mot_de_passe(
+    payload: ChangementMotDePasseRequest,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> MessageResponse:
+    """Changement de mot de passe en libre-service par l'utilisateur connecté — distinct
+    de la réinitialisation admin (SMS) et du flux mot-de-passe-oublié (OTP) : ici
+    l'utilisateur est déjà authentifié, on vérifie juste le mot de passe actuel."""
+    if not verify_password(payload.mot_de_passe_actuel, current_user.mot_de_passe_hash):
+        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+    current_user.mot_de_passe_hash = hash_password(payload.nouveau_mot_de_passe)
+    log_audit(db, "Mot de passe modifié", f"{current_user.prenom} {current_user.nom}")
+    db.commit()
+    return MessageResponse(message="Mot de passe modifié")
 
 
 @router.post("/mot-de-passe-oublie", response_model=MessageResponse)

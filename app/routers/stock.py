@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -10,8 +10,9 @@ from app.core.database import get_db
 from app.core.module_actions import STOCK_ECRITURE
 from app.core.security import get_current_user
 from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB, UtilisateurDB
-from app.models.schemas import MotifMouvementStock, StatutEcartInventaire
+from app.models.schemas import MotifMouvementStock, PalierPrix, StatutEcartInventaire
 from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
+from app.services.pricing import prix_effectif_a_date, prix_effectifs_batch, resoudre_prix
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
@@ -26,6 +27,10 @@ class LigneStock(BaseModel):
     seuil_alerte: int
     statut: str
     derniere_mouvement: str
+    # Prix effectifs pour cette boutique — surcharge boutique si définie, sinon prix réseau du produit.
+    prix_detail: float
+    prix_semi_gros: float
+    prix_gros: float
 
 
 class LigneMouvementStock(BaseModel):
@@ -70,6 +75,8 @@ def list_stock(
     rows = query.all()
     if secteur:
         rows = [s for s in rows if produits_by_id[s.produit_id].secteur == secteur]
+    today = date.today()
+    cache = prix_effectifs_batch(db, {s.boutique_id for s in rows}, {s.produit_id for s in rows}, today)
     return [
         LigneStock(
             boutique_id=s.boutique_id,
@@ -81,6 +88,9 @@ def list_stock(
             seuil_alerte=s.seuil_alerte,
             statut=_statut_stock(s.quantite_disponible, s.seuil_alerte),
             derniere_mouvement=s.derniere_mouvement.isoformat(),
+            prix_detail=resoudre_prix(cache, s.boutique_id, s.produit_id, PalierPrix.detail) or 0.0,
+            prix_semi_gros=resoudre_prix(cache, s.boutique_id, s.produit_id, PalierPrix.semi_gros) or 0.0,
+            prix_gros=resoudre_prix(cache, s.boutique_id, s.produit_id, PalierPrix.gros) or 0.0,
         )
         for s in rows
     ]
@@ -100,6 +110,7 @@ def create_ligne_stock(
     existing = db.get(StockBoutiqueDB, (payload.boutique_id, payload.produit_id))
     if existing:
         raise HTTPException(status_code=409, detail="Ce produit est déjà en stock dans cette boutique")
+    auteur = f"{current_user.prenom} {current_user.nom}"
     s = StockBoutiqueDB(
         boutique_id=payload.boutique_id,
         produit_id=payload.produit_id,
@@ -107,9 +118,12 @@ def create_ligne_stock(
         quantite_reservee=payload.quantite_reservee,
         seuil_alerte=payload.seuil_alerte,
         derniere_mouvement=datetime.now(timezone.utc),
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(s)
     db.commit()
+    today = date.today()
     return LigneStock(
         boutique_id=s.boutique_id,
         produit_id=s.produit_id,
@@ -120,6 +134,9 @@ def create_ligne_stock(
         seuil_alerte=s.seuil_alerte,
         statut=_statut_stock(s.quantite_disponible, s.seuil_alerte),
         derniere_mouvement=s.derniere_mouvement.isoformat(),
+        prix_detail=prix_effectif_a_date(db, produit.id, s.boutique_id, PalierPrix.detail, today) or 0.0,
+        prix_semi_gros=prix_effectif_a_date(db, produit.id, s.boutique_id, PalierPrix.semi_gros, today) or 0.0,
+        prix_gros=prix_effectif_a_date(db, produit.id, s.boutique_id, PalierPrix.gros, today) or 0.0,
     )
 
 
@@ -138,8 +155,10 @@ def update_ligne_stock(
         raise HTTPException(status_code=404, detail="Ligne de stock introuvable")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(s, field, value)
+    s.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     produit = db.get(ProduitDB, produit_id)
+    today = date.today()
     return LigneStock(
         boutique_id=s.boutique_id,
         produit_id=s.produit_id,
@@ -150,6 +169,9 @@ def update_ligne_stock(
         seuil_alerte=s.seuil_alerte,
         statut=_statut_stock(s.quantite_disponible, s.seuil_alerte),
         derniere_mouvement=s.derniere_mouvement.isoformat(),
+        prix_detail=prix_effectif_a_date(db, produit_id, boutique_id, PalierPrix.detail, today) or 0.0,
+        prix_semi_gros=prix_effectif_a_date(db, produit_id, boutique_id, PalierPrix.semi_gros, today) or 0.0,
+        prix_gros=prix_effectif_a_date(db, produit_id, boutique_id, PalierPrix.gros, today) or 0.0,
     )
 
 
@@ -205,6 +227,7 @@ def create_mouvement(
     if not produit:
         raise HTTPException(status_code=404, detail="Produit introuvable")
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     now = datetime.now(timezone.utc)
     mouvement = MouvementStockDB(
         id=str(uuid.uuid4())[:8],
@@ -214,6 +237,8 @@ def create_mouvement(
         motif=payload.motif,
         operateur=payload.operateur,
         quantite=payload.quantite,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(mouvement)
 
@@ -221,6 +246,7 @@ def create_mouvement(
     if ligne:
         ligne.quantite_disponible += payload.quantite
         ligne.derniere_mouvement = now
+        ligne.updated_by = auteur
     else:
         ligne = StockBoutiqueDB(
             boutique_id=payload.boutique_id,
@@ -229,6 +255,8 @@ def create_mouvement(
             quantite_reservee=0,
             seuil_alerte=0,
             derniere_mouvement=now,
+            created_by=auteur,
+            updated_by=auteur,
         )
         db.add(ligne)
 
@@ -280,7 +308,8 @@ def create_inventaire(
     if not produit:
         raise HTTPException(status_code=404, detail="Produit introuvable")
     statut = StatutEcartInventaire.conforme if payload.theorique == payload.reel else StatutEcartInventaire.a_investiguer
-    e = EcartInventaireDB(id=str(uuid.uuid4())[:8], statut=statut, **payload.model_dump())
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    e = EcartInventaireDB(id=str(uuid.uuid4())[:8], statut=statut, created_by=auteur, updated_by=auteur, **payload.model_dump())
     db.add(e)
     db.commit()
     return LigneEcartInventaire(

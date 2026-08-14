@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
 from app.core.database import get_db
-from app.core.module_actions import COMMANDE_CLIENT, COMMANDE_FOURNISSEUR_CREATION, COMMANDE_FOURNISSEUR_RECEPTION
+from app.core.module_actions import COMMANDE_CLIENT, COMMANDE_FOURNISSEUR_CREATION, COMMANDE_FOURNISSEUR_RECEPTION, REMISE_VALIDATION
 from app.core.security import get_current_user
 from app.db_models.models import (
     CommandeClientDB,
@@ -30,9 +30,11 @@ from app.models.schemas import (
     LigneCommandeFournisseur,
     ModePaiement,
     MotifMouvementStock,
+    PalierPrix,
     StatutCommandeClient,
     StatutCommandeFournisseur,
     StatutPaiement,
+    StatutValidationRemise,
 )
 from app.models.write_schemas import (
     CommandeClientCreate,
@@ -42,9 +44,35 @@ from app.models.write_schemas import (
     CorrectionReceptionCreate,
     ReceptionCreate,
 )
+from app.services.audit import log_audit
 from app.services.notifications import nom_boutique, notifier_client, notifier_gerants_boutique
+from app.services.pricing import prix_achat_effectif_a_date, prix_effectif_a_date
 
 router = APIRouter(prefix="/api/v1", tags=["commandes"])
+
+# Au-delà de cette remise (part du prix catalogue non facturée), un motif devient obligatoire
+# et la commande reste bloquée en attente de validation (gérant ou siège) avant de pouvoir être
+# livrée — cf. décision produit du 2026-08-13, même logique anti-fraude que les dépenses
+# (SEUIL_VALIDATION_SIEGE dans app/routers/depenses.py).
+SEUIL_REMISE = 0.10
+
+
+def _evaluer_remise(articles_prix: list[tuple[int, float, float]], motif: str | None) -> tuple[StatutValidationRemise, str | None]:
+    """Calcule la remise appliquée (prix catalogue vs prix facturé) à partir d'une liste de
+    (quantite, prix_catalogue, prix_facture) et retourne le statut de validation à appliquer.
+    Lève une erreur si la remise dépasse le seuil sans motif — jamais confiance dans un calcul
+    de remise fait côté client, on le refait ici à partir du prix catalogue en base."""
+    total_catalogue = sum(qte * prix_catalogue for qte, prix_catalogue, _ in articles_prix)
+    total_facture = sum(qte * prix_facture for qte, _, prix_facture in articles_prix)
+    remise_pct = (total_catalogue - total_facture) / total_catalogue if total_catalogue > 0 else 0.0
+    if remise_pct > SEUIL_REMISE:
+        if not motif:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Motif obligatoire pour une remise supérieure à {int(SEUIL_REMISE * 100)} % du prix catalogue",
+            )
+        return StatutValidationRemise.en_attente, motif
+    return StatutValidationRemise.aucune, motif
 
 
 def appliquer_livraison_stock(
@@ -103,8 +131,14 @@ def get_commande_client(
     return CommandeClientDetail(
         id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal,
         mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut, date_creation=c.date_creation,
+        remise_statut=c.remise_statut, remise_motif=c.remise_motif,
+        remise_validee_par=c.remise_validee_par, remise_validee_le=c.remise_validee_le,
         articles=[
-            ArticleCommande(id=l.id, produit_id=l.produit_id, produit_nom=produits[l.produit_id].nom, quantite=l.quantite, prix_unitaire=l.prix_unitaire)
+            ArticleCommande(
+                id=l.id, produit_id=l.produit_id, produit_nom=produits[l.produit_id].nom,
+                quantite=l.quantite, palier=l.palier, prix_unitaire=l.prix_unitaire,
+                prix_catalogue_a_la_vente=prix_effectif_a_date(db, l.produit_id, c.boutique_id, l.palier, c.date_creation.date()),
+            )
             for l in c.lignes
         ],
     )
@@ -121,18 +155,35 @@ def create_commande_client(
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
     produits = _produits_by_id(db, {a.produit_id for a in payload.articles})
+    aujourdhui = date.today()
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     c = CommandeClientDB(
         id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, boutique_id=payload.boutique_id,
         canal=payload.canal, mode_paiement=payload.mode_paiement, statut=payload.statut, montant=0.0,
+        created_by=auteur, updated_by=auteur,
     )
     db.add(c)
     montant = 0.0
+    articles_prix: list[tuple[int, float, float]] = []
     for a in payload.articles:
-        prix = a.prix_unitaire if a.prix_unitaire is not None else produits[a.produit_id].prix
+        prix_catalogue = prix_effectif_a_date(db, a.produit_id, payload.boutique_id, a.palier, aujourdhui) or 0.0
+        prix = a.prix_unitaire if a.prix_unitaire is not None else prix_catalogue
         montant += a.quantite * prix
-        db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a.produit_id, quantite=a.quantite, prix_unitaire=prix))
+        articles_prix.append((a.quantite, prix_catalogue, prix))
+        db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a.produit_id, quantite=a.quantite, palier=a.palier, prix_unitaire=prix))
     c.montant = montant
+
+    c.remise_statut, c.remise_motif = _evaluer_remise(articles_prix, payload.remise_motif)
+    if c.remise_statut == StatutValidationRemise.en_attente:
+        log_audit(
+            db, f"Remise en attente de validation sur commande #{c.id} — motif : {c.remise_motif}",
+            f"{current_user.prenom} {current_user.nom}", c.boutique_id,
+        )
+        notifier_gerants_boutique(
+            db, c.boutique_id, f"Remise en attente de validation — commande #{c.id} ({c.client_nom}) — motif : {c.remise_motif}",
+            titre="Remise à valider",
+        )
 
     if payload.mode_paiement != ModePaiement.credit_client:
         statut_paiement = StatutPaiement.en_attente if payload.mode_paiement == ModePaiement.a_la_livraison else StatutPaiement.encaisse
@@ -180,6 +231,7 @@ def update_commande_client(
     articles = data.pop("articles", None)
     for field, value in data.items():
         setattr(c, field, value)
+    c.updated_by = f"{current_user.prenom} {current_user.nom}"
 
     if articles is not None:
         if c.statut != StatutCommandeClient.en_attente:
@@ -187,6 +239,7 @@ def update_commande_client(
         if not articles:
             raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
         produits = _produits_by_id(db, {a["produit_id"] for a in articles})
+        aujourdhui = date.today()
 
         # Libère la réservation liée aux anciennes lignes avant de les remplacer.
         if etait_reservee:
@@ -199,11 +252,25 @@ def update_commande_client(
             db.delete(l)
         db.flush()
         montant = 0.0
+        articles_prix: list[tuple[int, float, float]] = []
         for a in articles:
-            prix = a["prix_unitaire"] if a.get("prix_unitaire") is not None else produits[a["produit_id"]].prix
+            palier = PalierPrix(a.get("palier", PalierPrix.detail.value))
+            prix_catalogue = prix_effectif_a_date(db, a["produit_id"], c.boutique_id, palier, aujourdhui) or 0.0
+            prix = a["prix_unitaire"] if a.get("prix_unitaire") is not None else prix_catalogue
             montant += a["quantite"] * prix
-            db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], prix_unitaire=prix))
+            articles_prix.append((a["quantite"], prix_catalogue, prix))
+            db.add(LigneCommandeClientDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], palier=palier, prix_unitaire=prix))
         c.montant = montant
+        c.remise_statut, c.remise_motif = _evaluer_remise(articles_prix, c.remise_motif)
+        if c.remise_statut == StatutValidationRemise.en_attente:
+            log_audit(
+                db, f"Remise en attente de validation sur commande #{c.id} — motif : {c.remise_motif}",
+                f"{current_user.prenom} {current_user.nom}", c.boutique_id,
+            )
+            notifier_gerants_boutique(
+                db, c.boutique_id, f"Remise en attente de validation — commande #{c.id} ({c.client_nom}) — motif : {c.remise_motif}",
+                titre="Remise à valider",
+            )
 
         # Ré-applique la réservation avec les nouvelles quantités (la commande reste en_attente ici).
         for a in articles:
@@ -218,6 +285,11 @@ def update_commande_client(
 
     # Livraison : la marchandise quitte réellement le stock — motif obligatoire (cf. CDC 3.4).
     if c.statut == StatutCommandeClient.livree and ancien_statut != StatutCommandeClient.livree:
+        if c.remise_statut == StatutValidationRemise.en_attente:
+            raise HTTPException(
+                status_code=400,
+                detail="Remise en attente de validation : impossible de livrer cette commande avant validation par un gérant ou le siège.",
+            )
         appliquer_livraison_stock(db, c, ancien_statut, f"{current_user.prenom} {current_user.nom}")
     # Annulation d'une commande encore en cours : libère la réservation, rien n'a physiquement bougé.
     elif c.statut == StatutCommandeClient.annulee and etait_reservee and ancien_statut != StatutCommandeClient.annulee:
@@ -226,6 +298,28 @@ def update_commande_client(
             if stock:
                 stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
 
+    db.commit()
+    return get_commande_client(commande_id, db, current_user)
+
+
+@router.put("/commandes-clients/{commande_id}/valider-remise", response_model=CommandeClientDetail)
+def valider_remise_commande_client(
+    commande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> CommandeClientDetail:
+    c = db.get(CommandeClientDB, commande_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Commande introuvable")
+    require_permission(db, current_user, REMISE_VALIDATION)
+    assert_boutique_access(current_user, c.boutique_id)
+    if c.remise_statut != StatutValidationRemise.en_attente:
+        raise HTTPException(status_code=400, detail="Cette commande n'a pas de remise en attente de validation")
+
+    c.remise_statut = StatutValidationRemise.validee
+    c.remise_validee_par = f"{current_user.prenom} {current_user.nom}"
+    c.remise_validee_le = datetime.now(timezone.utc)
+    log_audit(db, f"Remise validée sur commande #{c.id}", c.remise_validee_par, c.boutique_id)
     db.commit()
     return get_commande_client(commande_id, db, current_user)
 
@@ -276,14 +370,18 @@ def create_commande_fournisseur(
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
     produits = _produits_by_id(db, {a.produit_id for a in payload.articles})
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     c = CommandeFournisseurDB(
         id=str(uuid.uuid4())[:8], fournisseur_id=payload.fournisseur_id, boutique_id=payload.boutique_id,
         date_attendue=payload.date_attendue, statut=payload.statut, montant=0.0,
+        created_by=auteur, updated_by=auteur,
     )
     db.add(c)
     montant = 0.0
     for a in payload.articles:
-        prix = a.prix_unitaire if a.prix_unitaire is not None else produits[a.produit_id].prix
+        # Le palier sert ici de palier de volume négocié avec CE fournisseur (cf. prix_achats) —
+        # à ne pas confondre avec les paliers détail/semi-gros/gros de vente client.
+        prix = a.prix_unitaire if a.prix_unitaire is not None else (prix_achat_effectif_a_date(db, a.produit_id, payload.fournisseur_id, a.palier, date.today()) or 0.0)
         montant += a.quantite * prix
         db.add(LigneCommandeFournisseurDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a.produit_id, quantite=a.quantite, prix_unitaire=prix, quantite_recue=0))
     c.montant = montant
@@ -320,7 +418,8 @@ def update_commande_fournisseur(
         db.flush()
         montant = 0.0
         for a in articles:
-            prix = a["prix_unitaire"] if a.get("prix_unitaire") is not None else produits[a["produit_id"]].prix
+            palier = PalierPrix(a.get("palier", PalierPrix.detail.value))
+            prix = a.get("prix_unitaire") if a.get("prix_unitaire") is not None else (prix_achat_effectif_a_date(db, a["produit_id"], c.fournisseur_id, palier, date.today()) or 0.0)
             montant += a["quantite"] * prix
             db.add(LigneCommandeFournisseurDB(id=str(uuid.uuid4())[:8], commande_id=c.id, produit_id=a["produit_id"], quantite=a["quantite"], prix_unitaire=prix, quantite_recue=0))
         c.montant = montant

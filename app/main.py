@@ -14,8 +14,10 @@ from app.routers import (
     depenses,
     dettes,
     documents,
+    geographie,
     ia,
     livraisons,
+    notifications,
     parametres,
     produits,
     promotions,
@@ -59,6 +61,7 @@ app.include_router(livraisons.router)
 app.include_router(depenses.router)
 app.include_router(dettes.router)
 app.include_router(documents.router)
+app.include_router(geographie.router)
 app.include_router(transferts.router)
 app.include_router(comptabilite.router)
 app.include_router(promotions.router)
@@ -66,6 +69,7 @@ app.include_router(ia.router)
 app.include_router(securite.router)
 app.include_router(parametres.router)
 app.include_router(dashboard.router)
+app.include_router(notifications.router)
 
 
 @app.get("/api/v1/health")

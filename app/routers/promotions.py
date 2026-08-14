@@ -37,9 +37,11 @@ def create_promotion(
 ) -> PromotionDB:
     require_permission(db, current_user, PROMOTION_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
+    auteur = f"{current_user.prenom} {current_user.nom}"
     p = PromotionDB(
         id=str(uuid.uuid4())[:8], nom=payload.nom, boutique_id=payload.boutique_id, secteur=payload.secteur,
         origine=OriginePromotion.gerant, impact_estime=payload.impact_estime, statut=StatutPromotion.en_attente_validation,
+        created_by=auteur, updated_by=auteur,
     )
     db.add(p)
     db.commit()
@@ -60,6 +62,7 @@ def modifier_statut_promotion(
     # Validation/refus d'une promotion = décision siège (cf. CDC : statut initial "en_attente_validation").
     require_permission(db, current_user, PROMOTION_VALIDATION)
     p.statut = payload.statut
+    p.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(p)
     return p

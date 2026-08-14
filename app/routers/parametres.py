@@ -45,7 +45,8 @@ def create_referentiel_item(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ReferentielItem:
     require_permission(db, current_user, REFERENTIELS_GESTION)
-    item = ReferentielDB(id=str(uuid.uuid4())[:8], categorie=categorie, nom=payload.nom)
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    item = ReferentielDB(id=str(uuid.uuid4())[:8], categorie=categorie, nom=payload.nom, created_by=auteur, updated_by=auteur)
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -65,6 +66,7 @@ def update_referentiel_item(
     if not item:
         raise HTTPException(status_code=404, detail="Référentiel introuvable")
     item.nom = payload.nom
+    item.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(item)
     return ReferentielItem(id=item.id, nom=item.nom)

@@ -1,5 +1,8 @@
+import secrets
+import string
 import uuid
 
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,8 +14,19 @@ from app.db_models.models import BoutiqueDB, PermissionDB, RoleDB, UtilisateurDB
 from app.models.schemas import PermissionLigne, Utilisateur
 from app.models.write_schemas import PermissionUpdate, UtilisateurCreate, UtilisateurUpdate
 from app.services.audit import log_audit
+from app.services.sms import get_sms_provider
 
 router = APIRouter(prefix="/api/v1", tags=["utilisateurs"])
+
+ALPHABET_MOT_DE_PASSE = string.ascii_uppercase + string.ascii_lowercase + string.digits
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+def _generer_mot_de_passe(longueur: int = 10) -> str:
+    return "".join(secrets.choice(ALPHABET_MOT_DE_PASSE) for _ in range(longueur))
 
 
 def _to_schema(u: UtilisateurDB) -> Utilisateur:
@@ -25,6 +39,7 @@ def _to_schema(u: UtilisateurDB) -> Utilisateur:
         boutique_ids=[b.id for b in u.boutiques],
         statut=u.statut,
         derniere_connexion=u.derniere_connexion,
+        secteur_geo_id=u.secteur_geo_id,
     )
 
 
@@ -52,6 +67,7 @@ def create_utilisateur(
         raise HTTPException(status_code=404, detail="Rôle introuvable")
 
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
+    auteur = f"{current_user.prenom} {current_user.nom}"
     u = UtilisateurDB(
         id=str(uuid.uuid4())[:8],
         nom=payload.nom,
@@ -61,9 +77,12 @@ def create_utilisateur(
         role=payload.role,
         statut=payload.statut,
         boutiques=boutiques,
+        secteur_geo_id=payload.secteur_geo_id,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(u)
-    log_audit(db, f"Création utilisateur — {payload.prenom} {payload.nom} ({payload.role})", f"{current_user.prenom} {current_user.nom}")
+    log_audit(db, f"Création utilisateur — {payload.prenom} {payload.nom} ({payload.role})", auteur)
     db.commit()
     db.refresh(u)
     return _to_schema(u)
@@ -94,6 +113,7 @@ def update_utilisateur(
         u.boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
 
     auteur = f"{current_user.prenom} {current_user.nom}"
+    u.updated_by = auteur
     if payload.role is not None and payload.role != ancien_role:
         log_audit(db, f"Modification des droits — {u.prenom} {u.nom} passé en {payload.role}", auteur)
     if payload.statut is not None and payload.statut != ancien_statut:
@@ -119,6 +139,36 @@ def delete_utilisateur(
     db.commit()
 
 
+@router.post("/utilisateurs/{utilisateur_id}/reinitialiser-mot-de-passe", response_model=MessageResponse)
+def reinitialiser_mot_de_passe(
+    utilisateur_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> MessageResponse:
+    """Réinitialisation forcée par un administrateur : génère un nouveau mot de passe
+    aléatoire et l'envoie par SMS au contact de l'utilisateur — jamais renvoyé en clair
+    dans la réponse API, même à l'administrateur qui déclenche l'action."""
+    require_permission(db, current_user, UTILISATEURS_GESTION)
+    u = db.get(UtilisateurDB, utilisateur_id)
+    if not u:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    if not u.contact:
+        raise HTTPException(status_code=400, detail="Cet utilisateur n'a pas de contact enregistré pour recevoir le SMS")
+
+    nouveau_mot_de_passe = _generer_mot_de_passe()
+    u.mot_de_passe_hash = hash_password(nouveau_mot_de_passe)
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    u.updated_by = auteur
+
+    message = f"KFSTORE — Votre mot de passe a été réinitialisé par un administrateur. Nouveau mot de passe : {nouveau_mot_de_passe}"
+    if not get_sms_provider().send(u.contact, message):
+        raise HTTPException(status_code=502, detail="Échec de l'envoi du SMS — le mot de passe n'a pas été modifié")
+
+    log_audit(db, f"Mot de passe réinitialisé par un administrateur — {u.prenom} {u.nom}", auteur)
+    db.commit()
+    return MessageResponse(message="Nouveau mot de passe envoyé par SMS")
+
+
 @router.get("/permissions", response_model=list[PermissionLigne])
 def get_permissions(db: Session = Depends(get_db)) -> list[PermissionLigne]:
     rows = db.query(PermissionDB).order_by(PermissionDB.ordre).all()
@@ -139,6 +189,7 @@ def update_permission(
     if not row:
         raise HTTPException(status_code=404, detail="Permission introuvable")
     row.droit = payload.droit
+    row.updated_by = f"{current_user.prenom} {current_user.nom}"
     log_audit(
         db,
         f"Matrice des droits — {payload.module_action} / {payload.role} → {payload.droit.value}",

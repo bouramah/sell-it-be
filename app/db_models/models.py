@@ -10,6 +10,7 @@ from app.models.schemas import (
     MotifMouvementStock,
     ModePaiement,
     OriginePromotion,
+    PalierPrix,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -22,6 +23,7 @@ from app.models.schemas import (
     StatutPromotion,
     StatutTransfert,
     StatutValidationDepense,
+    StatutValidationRemise,
     TiersType,
     TypeMouvementCaisse,
 )
@@ -41,7 +43,20 @@ client_boutiques = Table(
 )
 
 
-class BoutiqueDB(Base):
+class AuditMixin:
+    """created_at/updated_at : gérés par la DB (server_default/onupdate), aucune plomberie
+    applicative nécessaire. created_by/updated_by : nullable, à peupler explicitement dans les
+    routers avec current_user là où c'est pertinent — jamais confiance dans une valeur fournie
+    par le client. Exclu de BoutiqueSecteurDB (table de jonction pure sans identité propre),
+    PrixPeriodeDB/PrixAchatDB (portent déjà cree_le/modifie_par, équivalents dédiés) et
+    JournalAuditDB (déjà horodatage/auteur, journal immuable — updated_* n'a pas de sens là)."""
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+
+
+class BoutiqueDB(AuditMixin, Base):
     __tablename__ = "boutiques"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -55,6 +70,7 @@ class BoutiqueDB(Base):
     telephone: Mapped[str] = mapped_column(String(40))
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
 
     secteurs: Mapped[list["BoutiqueSecteurDB"]] = relationship(
         back_populates="boutique", cascade="all, delete-orphan"
@@ -76,7 +92,7 @@ class BoutiqueSecteurDB(Base):
     boutique: Mapped["BoutiqueDB"] = relationship(back_populates="secteurs")
 
 
-class RoleDB(Base):
+class RoleDB(AuditMixin, Base):
     """Rôles applicatifs, en base plutôt qu'en code — cf. CDC §3.3 : "id, libellé, liste des
     droits (matrice), portée (boutique / multi-boutique / global siège)". La portée n'a que
     deux valeurs utiles ici : "boutique" (limité aux boutiques de rattachement de
@@ -91,7 +107,7 @@ class RoleDB(Base):
     systeme: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
-class UtilisateurDB(Base):
+class UtilisateurDB(AuditMixin, Base):
     __tablename__ = "utilisateurs"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -102,6 +118,8 @@ class UtilisateurDB(Base):
     role: Mapped[str] = mapped_column(String(60), ForeignKey("roles.id"))
     statut: Mapped[str] = mapped_column(String(20), default="actif")
     derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
 
     role_ref: Mapped["RoleDB"] = relationship(foreign_keys=[role], lazy="joined")
     boutiques: Mapped[list["BoutiqueDB"]] = relationship(
@@ -109,14 +127,16 @@ class UtilisateurDB(Base):
     )
 
 
-class ProduitDB(Base):
+class ProduitDB(AuditMixin, Base):
     __tablename__ = "produits"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
     secteur: Mapped[str] = mapped_column(String(60))
     categorie: Mapped[str] = mapped_column(String(120))
-    prix: Mapped[float] = mapped_column(Float)
+    # Quantité à partir de laquelle le palier est suggéré par défaut à la vente (reste modifiable).
+    seuil_semi_gros: Mapped[int] = mapped_column(Integer, default=10)
+    seuil_gros: Mapped[int] = mapped_column(Integer, default=50)
     unite: Mapped[str] = mapped_column(String(40))
     code_barres: Mapped[str] = mapped_column(String(40), unique=True)
     date_peremption: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -126,7 +146,7 @@ class ProduitDB(Base):
     )
 
 
-class ProduitImageDB(Base):
+class ProduitImageDB(AuditMixin, Base):
     __tablename__ = "produit_images"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -137,7 +157,44 @@ class ProduitImageDB(Base):
     produit: Mapped["ProduitDB"] = relationship(back_populates="images")
 
 
-class ReferentielDB(Base):
+class PrixPeriodeDB(Base):
+    """Prix d'un produit valable sur une période [date_debut, date_fin] — date_fin NULL = période
+    encore ouverte. boutique_id NULL = prix de référence réseau, sinon surcharge de cette boutique
+    (qui prévaut sur le réseau pour les dates qu'elle couvre). Aucune période ne peut chevaucher une
+    autre pour le même (produit_id, boutique_id, palier) — contrôlé en application, cf.
+    app/services/pricing.py::verifier_chevauchement. C'est la seule source de vérité pour le prix :
+    le « prix actuel » est simplement la période active à la date du jour."""
+    __tablename__ = "prix_periodes"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id", ondelete="CASCADE"))
+    boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), nullable=True)
+    palier: Mapped[PalierPrix] = mapped_column(Enum(PalierPrix))
+    prix: Mapped[float] = mapped_column(Float)
+    date_debut: Mapped[date] = mapped_column(Date)
+    date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    modifie_par: Mapped[str] = mapped_column(String(160))
+    cree_le: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PrixAchatDB(Base):
+    """Prix d'achat d'un produit auprès d'un fournisseur donné, sur une période de validité —
+    même principe que PrixPeriodeDB côté vente (palier = palier de quantité négociée avec ce
+    fournisseur, pas de portée réseau : un prix d'achat est toujours propre à un fournisseur)."""
+    __tablename__ = "prix_achats"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id", ondelete="CASCADE"))
+    fournisseur_id: Mapped[str] = mapped_column(String(40), ForeignKey("fournisseurs.id", ondelete="CASCADE"))
+    palier: Mapped[PalierPrix] = mapped_column(Enum(PalierPrix))
+    prix: Mapped[float] = mapped_column(Float)
+    date_debut: Mapped[date] = mapped_column(Date)
+    date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
+    modifie_par: Mapped[str] = mapped_column(String(160))
+    cree_le: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ReferentielDB(AuditMixin, Base):
     """Managed lookup lists (secteurs, villes, communes, quartiers, canaux de vente, ...)."""
 
     __tablename__ = "referentiels"
@@ -147,7 +204,7 @@ class ReferentielDB(Base):
     nom: Mapped[str] = mapped_column(String(160))
 
 
-class FournisseurDB(Base):
+class FournisseurDB(AuditMixin, Base):
     __tablename__ = "fournisseurs"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -155,9 +212,58 @@ class FournisseurDB(Base):
     secteur: Mapped[str] = mapped_column(String(60))
     conditions_paiement: Mapped[str] = mapped_column(String(200))
     contact: Mapped[str] = mapped_column(String(60))
+    secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
 
 
-class ClientDB(Base):
+# --- Découpage administratif (Région > Ville > Commune > Quartier > Secteur) ----------------
+# Sert à localiser précisément les clients (facilite les tournées de livraison, et servira à
+# l'appli mobile client) — cf. décision produit du 2026-08-14. "SecteurGeoDB" est nommé ainsi
+# pour ne pas entrer en collision avec le "secteur" métier existant (habillement, alimentation
+# générale…) porté par ProduitDB/BoutiqueDB ; côté utilisateur, ce niveau reste affiché "Secteur".
+# Les champs quartier/commune/ville en texte libre sur ClientDB (ci-dessous) restent en place
+# pour compatibilité — secteur_geo_id est la référence structurée à privilégier désormais.
+
+
+class RegionDB(AuditMixin, Base):
+    __tablename__ = "regions"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120), unique=True)
+
+
+class VilleDB(AuditMixin, Base):
+    __tablename__ = "villes"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    region_id: Mapped[str] = mapped_column(String(40), ForeignKey("regions.id", ondelete="CASCADE"))
+
+
+class CommuneDB(AuditMixin, Base):
+    __tablename__ = "communes"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    ville_id: Mapped[str] = mapped_column(String(40), ForeignKey("villes.id", ondelete="CASCADE"))
+
+
+class QuartierGeoDB(AuditMixin, Base):
+    __tablename__ = "quartiers_geo"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    commune_id: Mapped[str] = mapped_column(String(40), ForeignKey("communes.id", ondelete="CASCADE"))
+
+
+class SecteurGeoDB(AuditMixin, Base):
+    __tablename__ = "secteurs_geo"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    nom: Mapped[str] = mapped_column(String(120))
+    quartier_id: Mapped[str] = mapped_column(String(40), ForeignKey("quartiers_geo.id", ondelete="CASCADE"))
+
+
+class ClientDB(AuditMixin, Base):
     __tablename__ = "clients"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -168,13 +274,14 @@ class ClientDB(Base):
     quartier: Mapped[str | None] = mapped_column(String(120), nullable=True)
     commune: Mapped[str | None] = mapped_column(String(120), nullable=True)
     ville: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
 
     boutiques: Mapped[list["BoutiqueDB"]] = relationship(
         secondary=client_boutiques, back_populates="clients"
     )
 
 
-class StockBoutiqueDB(Base):
+class StockBoutiqueDB(AuditMixin, Base):
     __tablename__ = "stock_boutiques"
 
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="CASCADE"), primary_key=True)
@@ -185,7 +292,7 @@ class StockBoutiqueDB(Base):
     derniere_mouvement: Mapped[datetime] = mapped_column(DateTime)
 
 
-class MouvementStockDB(Base):
+class MouvementStockDB(AuditMixin, Base):
     __tablename__ = "mouvements_stock"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -197,7 +304,7 @@ class MouvementStockDB(Base):
     quantite: Mapped[int] = mapped_column(Integer)
 
 
-class EcartInventaireDB(Base):
+class EcartInventaireDB(AuditMixin, Base):
     __tablename__ = "ecarts_inventaire"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -208,7 +315,7 @@ class EcartInventaireDB(Base):
     statut: Mapped[StatutEcartInventaire] = mapped_column(Enum(StatutEcartInventaire))
 
 
-class CaisseDB(Base):
+class CaisseDB(AuditMixin, Base):
     __tablename__ = "caisses"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -221,7 +328,7 @@ class CaisseDB(Base):
     operateur: Mapped[str] = mapped_column(String(120))
 
 
-class MouvementCaisseDB(Base):
+class MouvementCaisseDB(AuditMixin, Base):
     __tablename__ = "mouvements_caisse"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -235,7 +342,7 @@ class MouvementCaisseDB(Base):
     montant: Mapped[float] = mapped_column(Float)
 
 
-class CommandeClientDB(Base):
+class CommandeClientDB(AuditMixin, Base):
     __tablename__ = "commandes_clients"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -246,23 +353,30 @@ class CommandeClientDB(Base):
     montant: Mapped[float] = mapped_column(Float)
     statut: Mapped[StatutCommandeClient] = mapped_column(Enum(StatutCommandeClient))
     date_creation: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    remise_motif: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    remise_statut: Mapped[StatutValidationRemise] = mapped_column(Enum(StatutValidationRemise), default=StatutValidationRemise.aucune)
+    remise_validee_par: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    remise_validee_le: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     lignes: Mapped[list["LigneCommandeClientDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
 
 
-class LigneCommandeClientDB(Base):
+class LigneCommandeClientDB(AuditMixin, Base):
     __tablename__ = "lignes_commandes_clients"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     commande_id: Mapped[str] = mapped_column(String(40), ForeignKey("commandes_clients.id", ondelete="CASCADE"))
     produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
     quantite: Mapped[int] = mapped_column(Integer)
+    # Palier utilisé pour cette ligne — nécessaire pour reconstituer le prix catalogue de référence
+    # à la date de la vente (cf. prix_effectif_a_date), le prix dépendant du palier.
+    palier: Mapped[PalierPrix] = mapped_column(Enum(PalierPrix), default=PalierPrix.detail)
     prix_unitaire: Mapped[float] = mapped_column(Float)
 
     commande: Mapped["CommandeClientDB"] = relationship(back_populates="lignes")
 
 
-class CommandeFournisseurDB(Base):
+class CommandeFournisseurDB(AuditMixin, Base):
     __tablename__ = "commandes_fournisseurs"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -276,7 +390,7 @@ class CommandeFournisseurDB(Base):
     lignes: Mapped[list["LigneCommandeFournisseurDB"]] = relationship(back_populates="commande", cascade="all, delete-orphan")
 
 
-class LigneCommandeFournisseurDB(Base):
+class LigneCommandeFournisseurDB(AuditMixin, Base):
     __tablename__ = "lignes_commandes_fournisseurs"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -289,7 +403,7 @@ class LigneCommandeFournisseurDB(Base):
     commande: Mapped["CommandeFournisseurDB"] = relationship(back_populates="lignes")
 
 
-class DetteDB(Base):
+class DetteDB(AuditMixin, Base):
     __tablename__ = "dettes"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -304,7 +418,7 @@ class DetteDB(Base):
     remboursements: Mapped[list["RemboursementDB"]] = relationship(back_populates="dette", cascade="all, delete-orphan")
 
 
-class RemboursementDB(Base):
+class RemboursementDB(AuditMixin, Base):
     __tablename__ = "remboursements"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -318,7 +432,7 @@ class RemboursementDB(Base):
     dette: Mapped["DetteDB"] = relationship(back_populates="remboursements")
 
 
-class TransfertStockDB(Base):
+class TransfertStockDB(AuditMixin, Base):
     __tablename__ = "transferts_stock"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -328,9 +442,14 @@ class TransfertStockDB(Base):
     quantite: Mapped[int] = mapped_column(Integer)
     demandeur: Mapped[str] = mapped_column(String(160))
     statut: Mapped[StatutTransfert] = mapped_column(Enum(StatutTransfert))
+    # Écart à la réception (casse/perte en transit, cf. CDC 3.9) : quantite_recue < quantite
+    # signifie qu'une partie ne s'est pas rendue à destination — motif_ecart devient alors
+    # obligatoire (contrôlé côté routeur, jamais confiance dans une valeur envoyée sans motif).
+    quantite_recue: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    motif_ecart: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
-class LivraisonDB(Base):
+class LivraisonDB(AuditMixin, Base):
     __tablename__ = "livraisons"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -344,7 +463,7 @@ class LivraisonDB(Base):
     preuve_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
-class DepenseDB(Base):
+class DepenseDB(AuditMixin, Base):
     __tablename__ = "depenses"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -358,7 +477,7 @@ class DepenseDB(Base):
     justificatif_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
-class PaiementClientDB(Base):
+class PaiementClientDB(AuditMixin, Base):
     __tablename__ = "paiements_clients"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -372,7 +491,7 @@ class PaiementClientDB(Base):
     statut: Mapped[StatutPaiement] = mapped_column(Enum(StatutPaiement))
 
 
-class PaiementFournisseurDB(Base):
+class PaiementFournisseurDB(AuditMixin, Base):
     __tablename__ = "paiements_fournisseurs"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -387,7 +506,7 @@ class PaiementFournisseurDB(Base):
     document_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
-class PermissionDB(Base):
+class PermissionDB(AuditMixin, Base):
     __tablename__ = "permissions"
 
     module_action: Mapped[str] = mapped_column(String(160), primary_key=True)
@@ -396,7 +515,7 @@ class PermissionDB(Base):
     ordre: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class PromotionDB(Base):
+class PromotionDB(AuditMixin, Base):
     __tablename__ = "promotions"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -419,7 +538,7 @@ class JournalAuditDB(Base):
     boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="SET NULL"), nullable=True)
 
 
-class ParametreSecuriteDB(Base):
+class ParametreSecuriteDB(AuditMixin, Base):
     __tablename__ = "parametres_securite"
 
     id: Mapped[str] = mapped_column(String(60), primary_key=True)
@@ -428,7 +547,7 @@ class ParametreSecuriteDB(Base):
     ordre: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class OtpCodeDB(Base):
+class OtpCodeDB(AuditMixin, Base):
     """Code à usage unique envoyé par SMS — réinitialisation de mot de passe
     aujourd'hui, base réutilisable pour la 2FA (CDC §7.2) plus tard."""
     __tablename__ = "otp_codes"

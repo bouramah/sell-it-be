@@ -61,10 +61,12 @@ def create_depense(
         if payload.montant < SEUIL_VALIDATION_SIEGE
         else StatutValidationDepense.en_attente
     )
+    auteur_action = f"{current_user.prenom} {current_user.nom}"
     d = DepenseDB(
         id=str(uuid.uuid4())[:8], boutique_id=payload.boutique_id, caisse_id=payload.caisse_id,
         categorie=payload.categorie, auteur=payload.auteur, date=payload.date, montant=payload.montant,
         statut_validation=statut,
+        created_by=auteur_action, updated_by=auteur_action,
     )
     db.add(d)
 
@@ -72,8 +74,10 @@ def create_depense(
         id=str(uuid.uuid4())[:8], horodatage=datetime.now(timezone.utc), boutique_id=caisse.boutique_id,
         caisse_id=caisse.id, caisse_libelle=caisse.libelle, type=TypeMouvementCaisse.decaissement,
         motif=f"Dépense — {payload.categorie}", operateur=payload.auteur, montant=-payload.montant,
+        created_by=auteur_action, updated_by=auteur_action,
     ))
     caisse.solde_theorique -= payload.montant
+    caisse.updated_by = auteur_action
 
     db.commit()
     db.refresh(d)
@@ -93,6 +97,7 @@ def valider_depense(
     if d.statut_validation != StatutValidationDepense.en_attente:
         raise HTTPException(status_code=400, detail="Cette dépense n'est pas en attente de validation")
     d.statut_validation = StatutValidationDepense.validee_siege
+    d.updated_by = f"{current_user.prenom} {current_user.nom}"
     log_audit(
         db,
         f"Dépense validée — {d.categorie} {d.montant:,.0f} GNF".replace(",", " "),

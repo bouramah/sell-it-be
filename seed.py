@@ -6,6 +6,9 @@ Run once against an empty `kfstore` database (after `alembic upgrade head`):
 Default password for every seeded user: "kfstore2026" (change on first login).
 """
 
+import uuid
+from datetime import date
+
 from app.core.database import Base, SessionLocal, engine
 from app.core.security import DEFAULT_PASSWORD, hash_password
 from app.data.fixtures import (
@@ -47,6 +50,7 @@ from app.db_models.models import (
     MouvementStockDB,
     PaiementClientDB,
     PaiementFournisseurDB,
+    PrixPeriodeDB,
     ProduitDB,
     PromotionDB,
     ReferentielDB,
@@ -74,12 +78,19 @@ def seed() -> None:
             print("Boutiques déjà présentes, ignoré")
 
         if db.query(ProduitDB).count() == 0:
+            aujourdhui = date.today()
             for p in PRODUITS:
                 db.add(ProduitDB(
-                    id=p.id, nom=p.nom, secteur=p.secteur, categorie=p.categorie, prix=p.prix,
+                    id=p.id, nom=p.nom, secteur=p.secteur, categorie=p.categorie,
+                    seuil_semi_gros=p.seuil_semi_gros, seuil_gros=p.seuil_gros,
                     unite=p.unite, code_barres=p.code_barres, date_peremption=p.date_peremption,
                 ))
-            print(f"Produits : {len(PRODUITS)} insérés")
+                for palier, prix in [("detail", p.prix_detail), ("semi_gros", p.prix_semi_gros), ("gros", p.prix_gros)]:
+                    db.add(PrixPeriodeDB(
+                        id=str(uuid.uuid4())[:8], produit_id=p.id, boutique_id=None, palier=palier,
+                        prix=prix, date_debut=aujourdhui, date_fin=None, modifie_par="Seed initial",
+                    ))
+            print(f"Produits : {len(PRODUITS)} insérés (avec période de prix initiale)")
         else:
             print("Produits déjà présents, ignoré")
 

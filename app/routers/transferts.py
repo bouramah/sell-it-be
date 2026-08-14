@@ -53,7 +53,8 @@ def create_transfert(
 ) -> TransfertStockDB:
     require_permission(db, current_user, TRANSFERT_DEMANDE)
     _assert_transfert_access(current_user, payload.boutique_source_id, payload.boutique_destination_id)
-    t = TransfertStockDB(id=str(uuid.uuid4())[:8], statut=StatutTransfert.demande, **payload.model_dump())
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    t = TransfertStockDB(id=str(uuid.uuid4())[:8], statut=StatutTransfert.demande, created_by=auteur, updated_by=auteur, **payload.model_dump())
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -75,11 +76,22 @@ def update_statut(
     if payload.statut == StatutTransfert.recu:
         require_permission(db, current_user, TRANSFERT_RECEPTION)
         if t.statut != StatutTransfert.recu:
-            _appliquer_reception(db, t)
+            quantite_recue = payload.quantite_recue if payload.quantite_recue is not None else t.quantite
+            if quantite_recue < 0 or quantite_recue > t.quantite:
+                raise HTTPException(status_code=400, detail=f"La quantité reçue doit être comprise entre 0 et {t.quantite}")
+            if quantite_recue < t.quantite and not payload.motif_ecart:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Motif obligatoire : seulement {quantite_recue}/{t.quantite} reçus (casse, perte en transit…)",
+                )
+            _appliquer_reception(db, t, quantite_recue, f"{current_user.prenom} {current_user.nom}")
+            t.quantite_recue = quantite_recue
+            t.motif_ecart = payload.motif_ecart if quantite_recue < t.quantite else None
     else:
         require_permission(db, current_user, TRANSFERT_VALIDATION)
 
     t.statut = payload.statut
+    t.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(t)
 
@@ -95,7 +107,11 @@ def update_statut(
     return t
 
 
-def _appliquer_reception(db: Session, t: TransfertStockDB) -> None:
+def _appliquer_reception(db: Session, t: TransfertStockDB, quantite_recue: int, auteur: str) -> None:
+    """La source perd toujours la quantité expédiée (elle a réellement quitté le stock) ; la
+    destination ne gagne que ce qui est réellement arrivé — l'écart (casse/perte en transit,
+    CDC 3.9) reste documenté sur le transfert lui-même (quantite_recue/motif_ecart) plutôt que
+    comme un mouvement de stock fantôme côté destination."""
     now = datetime.now(timezone.utc)
 
     source = db.get(StockBoutiqueDB, (t.boutique_source_id, t.produit_id))
@@ -103,21 +119,27 @@ def _appliquer_reception(db: Session, t: TransfertStockDB) -> None:
         raise HTTPException(status_code=400, detail="Stock source insuffisant pour ce transfert")
     source.quantite_disponible -= t.quantite
     source.derniere_mouvement = now
+    source.updated_by = auteur
     db.add(MouvementStockDB(
         id=str(uuid.uuid4())[:8], horodatage=now, produit_id=t.produit_id, boutique_id=t.boutique_source_id,
         motif=MotifMouvementStock.transfert_sortant, operateur=t.demandeur, quantite=-t.quantite,
+        created_by=auteur, updated_by=auteur,
     ))
 
-    dest = db.get(StockBoutiqueDB, (t.boutique_destination_id, t.produit_id))
-    if dest:
-        dest.quantite_disponible += t.quantite
-        dest.derniere_mouvement = now
-    else:
-        db.add(StockBoutiqueDB(
-            boutique_id=t.boutique_destination_id, produit_id=t.produit_id,
-            quantite_disponible=t.quantite, quantite_reservee=0, seuil_alerte=0, derniere_mouvement=now,
+    if quantite_recue > 0:
+        dest = db.get(StockBoutiqueDB, (t.boutique_destination_id, t.produit_id))
+        if dest:
+            dest.quantite_disponible += quantite_recue
+            dest.derniere_mouvement = now
+            dest.updated_by = auteur
+        else:
+            db.add(StockBoutiqueDB(
+                boutique_id=t.boutique_destination_id, produit_id=t.produit_id,
+                quantite_disponible=quantite_recue, quantite_reservee=0, seuil_alerte=0, derniere_mouvement=now,
+                created_by=auteur, updated_by=auteur,
+            ))
+        db.add(MouvementStockDB(
+            id=str(uuid.uuid4())[:8], horodatage=now, produit_id=t.produit_id, boutique_id=t.boutique_destination_id,
+            motif=MotifMouvementStock.transfert_entrant, operateur=t.demandeur, quantite=quantite_recue,
+            created_by=auteur, updated_by=auteur,
         ))
-    db.add(MouvementStockDB(
-        id=str(uuid.uuid4())[:8], horodatage=now, produit_id=t.produit_id, boutique_id=t.boutique_destination_id,
-        motif=MotifMouvementStock.transfert_entrant, operateur=t.demandeur, quantite=t.quantite,
-    ))

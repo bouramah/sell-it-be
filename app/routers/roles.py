@@ -40,8 +40,9 @@ def create_role(
     if db.get(RoleDB, payload.id):
         raise HTTPException(status_code=409, detail="Un rôle avec cet identifiant existe déjà")
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     ordre_max = db.query(RoleDB).count()
-    role = RoleDB(id=payload.id, libelle=payload.libelle, portee=payload.portee, ordre=ordre_max, systeme=False)
+    role = RoleDB(id=payload.id, libelle=payload.libelle, portee=payload.portee, ordre=ordre_max, systeme=False, created_by=auteur, updated_by=auteur)
     db.add(role)
     db.flush()  # la ligne roles doit exister avant les inserts permissions (FK fk_permissions_role)
 
@@ -50,9 +51,9 @@ def create_role(
     # §3.3 : un rôle personnalisé doit être utilisable "sans développement supplémentaire".
     actions = db.query(PermissionDB.module_action, PermissionDB.ordre).distinct().all()
     for module_action, ordre in actions:
-        db.add(PermissionDB(module_action=module_action, role=payload.id, droit=DroitAcces.aucun, ordre=ordre))
+        db.add(PermissionDB(module_action=module_action, role=payload.id, droit=DroitAcces.aucun, ordre=ordre, created_by=auteur, updated_by=auteur))
 
-    log_audit(db, f"Création rôle — {payload.libelle} ({payload.id})", f"{current_user.prenom} {current_user.nom}")
+    log_audit(db, f"Création rôle — {payload.libelle} ({payload.id})", auteur)
     db.commit()
     db.refresh(role)
     return role
@@ -79,7 +80,8 @@ def update_role(
     if payload.portee is not None:
         role.portee = payload.portee
 
-    log_audit(db, f"Modification rôle — {role.libelle} ({role.id})", f"{current_user.prenom} {current_user.nom}")
+    role.updated_by = f"{current_user.prenom} {current_user.nom}"
+    log_audit(db, f"Modification rôle — {role.libelle} ({role.id})", role.updated_by)
     db.commit()
     db.refresh(role)
     return role

@@ -71,6 +71,7 @@ def create_dette(
 ) -> LigneDette:
     require_permission(db, current_user, DETTE_CREATION)
     assert_boutique_access(current_user, payload.boutique_id)
+    auteur = f"{current_user.prenom} {current_user.nom}"
     d = DetteDB(
         id=str(uuid.uuid4())[:8],
         tiers_type=payload.tiers_type,
@@ -80,6 +81,8 @@ def create_dette(
         solde_restant=payload.montant_initial,
         echeance=payload.echeance,
         statut=StatutDette.en_cours,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(d)
     db.commit()
@@ -125,6 +128,7 @@ def encaisser_remboursement(
     if caisse.statut != StatutCaisse.ouverte:
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un encaissement")
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     r = RemboursementDB(
         id=str(uuid.uuid4())[:8],
         dette_id=dette_id,
@@ -133,11 +137,14 @@ def encaisser_remboursement(
         mode_paiement=payload.mode_paiement,
         date=date.today(),
         operateur=payload.operateur,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(r)
 
     d.solde_restant -= payload.montant
     d.statut = StatutDette.soldee if d.solde_restant <= 0 else StatutDette.en_cours
+    d.updated_by = auteur
 
     # Une créance client encaissée fait rentrer de l'argent en caisse ; une dette fournisseur réglée en fait sortir.
     type_mouvement = TypeMouvementCaisse.encaissement if d.tiers_type == TiersType.client else TypeMouvementCaisse.decaissement
@@ -146,20 +153,24 @@ def encaisser_remboursement(
         id=str(uuid.uuid4())[:8], horodatage=datetime.now(timezone.utc), boutique_id=caisse.boutique_id,
         caisse_id=caisse.id, caisse_libelle=caisse.libelle, type=type_mouvement,
         motif=f"Remboursement dette — {d.tiers_nom}", operateur=payload.operateur, montant=signed_montant,
+        created_by=auteur, updated_by=auteur,
     ))
     caisse.solde_theorique += signed_montant
+    caisse.updated_by = auteur
 
     if d.tiers_type == TiersType.client:
         db.add(PaiementClientDB(
             id=str(uuid.uuid4())[:8], client_nom=d.tiers_nom, reference="Dette — remboursement",
             boutique_id=d.boutique_id, mode_paiement=payload.mode_paiement, date=date.today(),
             montant=payload.montant, statut=StatutPaiement.encaisse,
+            created_by=auteur, updated_by=auteur,
         ))
     else:
         db.add(PaiementFournisseurDB(
             id=str(uuid.uuid4())[:8], fournisseur_nom=d.tiers_nom, reference="Dette — remboursement",
             boutique_id=d.boutique_id, mode_paiement=payload.mode_paiement, date=date.today(),
             montant=payload.montant, statut=StatutPaiement.paye,
+            created_by=auteur, updated_by=auteur,
         ))
 
     db.commit()

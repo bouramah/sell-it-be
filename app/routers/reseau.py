@@ -30,6 +30,7 @@ def _to_schema(b: BoutiqueDB) -> Boutique:
         telephone=b.telephone,
         latitude=b.latitude,
         longitude=b.longitude,
+        secteur_geo_id=b.secteur_geo_id,
     )
 
 
@@ -75,6 +76,7 @@ def create_boutique(
 ) -> Boutique:
     require_permission(db, current_user, BOUTIQUE_GESTION)
     boutique_id = str(uuid.uuid4())[:8]
+    auteur = f"{current_user.prenom} {current_user.nom}"
     b = BoutiqueDB(
         id=boutique_id,
         nom=payload.nom,
@@ -87,10 +89,13 @@ def create_boutique(
         telephone=payload.telephone,
         latitude=payload.latitude,
         longitude=payload.longitude,
+        secteur_geo_id=payload.secteur_geo_id,
+        created_by=auteur,
+        updated_by=auteur,
     )
     b.secteurs = [BoutiqueSecteurDB(boutique_id=boutique_id, secteur=s) for s in payload.secteurs]
     db.add(b)
-    log_audit(db, f"Création boutique — {payload.nom}", f"{current_user.prenom} {current_user.nom}", boutique_id)
+    log_audit(db, f"Création boutique — {payload.nom}", auteur, boutique_id)
     db.commit()
     db.refresh(b)
     return _to_schema(b)
@@ -115,6 +120,7 @@ def update_boutique(
     if payload.secteurs is not None:
         b.secteurs = [BoutiqueSecteurDB(boutique_id=boutique_id, secteur=s) for s in payload.secteurs]
 
+    b.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(b)
     return _to_schema(b)
@@ -151,7 +157,8 @@ def create_fournisseur(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> FournisseurDB:
     require_permission(db, current_user, FOURNISSEUR_GESTION)
-    f = FournisseurDB(id=str(uuid.uuid4())[:8], **payload.model_dump())
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    f = FournisseurDB(id=str(uuid.uuid4())[:8], created_by=auteur, updated_by=auteur, **payload.model_dump())
     db.add(f)
     db.commit()
     db.refresh(f)
@@ -171,6 +178,7 @@ def update_fournisseur(
         raise HTTPException(status_code=404, detail="Fournisseur introuvable")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(f, field, value)
+    f.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(f)
     return f

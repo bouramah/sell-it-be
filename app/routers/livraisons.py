@@ -9,10 +9,10 @@ from app.core.database import get_db
 from app.core.module_actions import LIVRAISON_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
-from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison
+from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison, StatutValidationRemise
 from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
 from app.routers.commandes import appliquer_livraison_stock
-from app.services.notifications import nom_boutique, notifier_client
+from app.services.notifications import nom_boutique, notifier_client, notifier_utilisateur
 
 router = APIRouter(prefix="/api/v1/livraisons", tags=["livraisons"])
 
@@ -59,11 +59,13 @@ def create_livraison(
             raise HTTPException(status_code=404, detail="Compte livreur introuvable")
         livreur_nom = f"{livreur_utilisateur.prenom} {livreur_utilisateur.nom}"
 
+    auteur = f"{current_user.prenom} {current_user.nom}"
     l = LivraisonDB(
         id=str(uuid.uuid4())[:8], commande_id=payload.commande_id, livreur=livreur_nom,
         livreur_user_id=payload.livreur_user_id,
         boutique_id=payload.boutique_id, adresse=payload.adresse, creneau=payload.creneau,
         statut=StatutLivraison.preparee,
+        created_by=auteur, updated_by=auteur,
     )
     db.add(l)
     db.commit()
@@ -73,6 +75,10 @@ def create_livraison(
         db, commande.client_nom,
         f"Bonjour {commande.client_nom}, votre commande #{commande.id} a été affectée à un livreur. "
         f"Créneau : {l.creneau}. Adresse : {l.adresse}. — KFSTORE",
+    )
+    notifier_utilisateur(
+        db, l.livreur_user_id, "Nouvelle livraison affectée",
+        f"Commande #{commande.id} — {l.adresse} — créneau {l.creneau}",
     )
 
     return l
@@ -91,8 +97,14 @@ def update_statut(
     require_permission(db, current_user, LIVRAISON_GESTION)
     assert_boutique_access(current_user, l.boutique_id)
     l.statut = payload.statut
+    l.updated_by = f"{current_user.prenom} {current_user.nom}"
     commande = db.get(CommandeClientDB, l.commande_id)
     if payload.statut == StatutLivraison.livree:
+        if commande and commande.remise_statut == StatutValidationRemise.en_attente:
+            raise HTTPException(
+                status_code=400,
+                detail="Remise en attente de validation : impossible de livrer cette commande avant validation par un gérant ou le siège.",
+            )
         if commande and commande.statut not in (StatutCommandeClient.annulee, StatutCommandeClient.livree):
             ancien_statut_commande = commande.statut
             appliquer_livraison_stock(db, commande, ancien_statut_commande, f"{current_user.prenom} {current_user.nom}")

@@ -154,16 +154,16 @@ PAIEMENTS_FOURNISSEURS: list[PaiementFournisseur] = [
 # --- Produits & stock -----------------------------------------------------------
 
 PRODUITS: list[Produit] = [
-    Produit(id="robe-wax", nom="Robe wax femme (M)", secteur="habillement", categorie="Vêtements femme", prix=70000, unite="pièce", code_barres="6910000000011"),
-    Produit(id="sandales-enfant", nom="Sandales enfant", secteur="habillement", categorie="Chaussures", prix=35000, unite="paire", code_barres="6910000000028"),
-    Produit(id="chemise-homme", nom="Chemise homme (L)", secteur="habillement", categorie="Vêtements homme", prix=85000, unite="pièce", code_barres="6910000000035"),
-    Produit(id="ensemble-wax-homme", nom="Ensemble wax homme", secteur="habillement", categorie="Vêtements homme", prix=120000, unite="pièce", code_barres="6910000000042"),
-    Produit(id="riz-local", nom="Riz local 25kg", secteur="alimentation_generale", categorie="Céréales", prix=210000, unite="sac", code_barres="6910000000059", date_peremption=date(2027, 3, 1)),
-    Produit(id="huile-vegetale", nom="Huile végétale 5L", secteur="alimentation_generale", categorie="Huiles", prix=68000, unite="bidon", code_barres="6910000000066", date_peremption=date(2026, 9, 30)),
-    Produit(id="sucre-poudre", nom="Sucre en poudre 1kg", secteur="alimentation_generale", categorie="Épicerie", prix=9000, unite="paquet", code_barres="6910000000073"),
-    Produit(id="ventilateur", nom="Ventilateur sur pied", secteur="electronique_electromenager", categorie="Électroménager", prix=380000, unite="pièce", code_barres="6910000000080"),
-    Produit(id="refrigerateur", nom="Réfrigérateur 200L", secteur="electronique_electromenager", categorie="Électroménager", prix=2100000, unite="pièce", code_barres="6910000000097"),
-    Produit(id="televiseur", nom="Téléviseur LED 43\"", secteur="electronique_electromenager", categorie="Électronique", prix=1450000, unite="pièce", code_barres="6910000000103"),
+    Produit(id="robe-wax", nom="Robe wax femme (M)", secteur="habillement", categorie="Vêtements femme", prix_detail=70000, prix_semi_gros=65000, prix_gros=60000, unite="pièce", code_barres="6910000000011"),
+    Produit(id="sandales-enfant", nom="Sandales enfant", secteur="habillement", categorie="Chaussures", prix_detail=35000, prix_semi_gros=32000, prix_gros=29000, unite="paire", code_barres="6910000000028"),
+    Produit(id="chemise-homme", nom="Chemise homme (L)", secteur="habillement", categorie="Vêtements homme", prix_detail=85000, prix_semi_gros=78000, prix_gros=72000, unite="pièce", code_barres="6910000000035"),
+    Produit(id="ensemble-wax-homme", nom="Ensemble wax homme", secteur="habillement", categorie="Vêtements homme", prix_detail=120000, prix_semi_gros=110000, prix_gros=100000, unite="pièce", code_barres="6910000000042"),
+    Produit(id="riz-local", nom="Riz local 25kg", secteur="alimentation_generale", categorie="Céréales", prix_detail=210000, prix_semi_gros=200000, prix_gros=190000, seuil_semi_gros=5, seuil_gros=20, unite="sac", code_barres="6910000000059", date_peremption=date(2027, 3, 1)),
+    Produit(id="huile-vegetale", nom="Huile végétale 5L", secteur="alimentation_generale", categorie="Huiles", prix_detail=68000, prix_semi_gros=63000, prix_gros=58000, unite="bidon", code_barres="6910000000066", date_peremption=date(2026, 9, 30)),
+    Produit(id="sucre-poudre", nom="Sucre en poudre 1kg", secteur="alimentation_generale", categorie="Épicerie", prix_detail=9000, prix_semi_gros=8500, prix_gros=8000, unite="paquet", code_barres="6910000000073"),
+    Produit(id="ventilateur", nom="Ventilateur sur pied", secteur="electronique_electromenager", categorie="Électroménager", prix_detail=380000, prix_semi_gros=360000, prix_gros=340000, unite="pièce", code_barres="6910000000080"),
+    Produit(id="refrigerateur", nom="Réfrigérateur 200L", secteur="electronique_electromenager", categorie="Électroménager", prix_detail=2100000, prix_semi_gros=2050000, prix_gros=2000000, unite="pièce", code_barres="6910000000097"),
+    Produit(id="televiseur", nom="Téléviseur LED 43\"", secteur="electronique_electromenager", categorie="Électronique", prix_detail=1450000, prix_semi_gros=1400000, prix_gros=1350000, unite="pièce", code_barres="6910000000103"),
 ]
 
 STOCKS: list[StockBoutique] = [

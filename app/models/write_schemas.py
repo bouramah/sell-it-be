@@ -7,6 +7,7 @@ from app.models.schemas import (
     DroitAcces,
     MotifMouvementStock,
     ModePaiement,
+    PalierPrix,
     SegmentClient,
     StatutBoutique,
     StatutCaisse,
@@ -34,6 +35,7 @@ class BoutiqueCreate(BaseModel):
     telephone: str
     latitude: float | None = None
     longitude: float | None = None
+    secteur_geo_id: str | None = None
 
 
 class BoutiqueUpdate(BaseModel):
@@ -48,6 +50,7 @@ class BoutiqueUpdate(BaseModel):
     telephone: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    secteur_geo_id: str | None = None
 
 
 class UtilisateurCreate(BaseModel):
@@ -58,6 +61,7 @@ class UtilisateurCreate(BaseModel):
     role: str
     boutique_ids: list[str] = []
     statut: str = "actif"
+    secteur_geo_id: str | None = None
 
 
 class UtilisateurUpdate(BaseModel):
@@ -68,26 +72,50 @@ class UtilisateurUpdate(BaseModel):
     role: str | None = None
     boutique_ids: list[str] | None = None
     statut: str | None = None
+    secteur_geo_id: str | None = None
 
 
 class ProduitCreate(BaseModel):
     nom: str
     secteur: str
     categorie: str
-    prix: float
+    prix_detail: float
+    prix_semi_gros: float
+    prix_gros: float
+    seuil_semi_gros: int = 10
+    seuil_gros: int = 50
     unite: str
     code_barres: str
     date_peremption: date | None = None
 
 
 class ProduitUpdate(BaseModel):
+    # Pas de champs de prix ici : un changement de prix doit obligatoirement passer par
+    # POST /produits/{id}/prix-periodes (période datée, traçable, sans chevauchement).
     nom: str | None = None
     secteur: str | None = None
     categorie: str | None = None
-    prix: float | None = None
+    seuil_semi_gros: int | None = None
+    seuil_gros: int | None = None
     unite: str | None = None
     code_barres: str | None = None
     date_peremption: date | None = None
+
+
+class PrixPeriodeInput(BaseModel):
+    boutique_id: str | None = None  # None = prix de référence réseau
+    palier: PalierPrix
+    prix: float
+    date_debut: date
+    date_fin: date | None = None
+
+
+class PrixAchatInput(BaseModel):
+    fournisseur_id: str
+    palier: PalierPrix
+    prix: float
+    date_debut: date
+    date_fin: date | None = None
 
 
 class FournisseurCreate(BaseModel):
@@ -95,6 +123,7 @@ class FournisseurCreate(BaseModel):
     secteur: str
     conditions_paiement: str
     contact: str
+    secteur_geo_id: str | None = None
 
 
 class FournisseurUpdate(BaseModel):
@@ -102,6 +131,7 @@ class FournisseurUpdate(BaseModel):
     secteur: str | None = None
     conditions_paiement: str | None = None
     contact: str | None = None
+    secteur_geo_id: str | None = None
 
 
 class ClientCreate(BaseModel):
@@ -113,6 +143,7 @@ class ClientCreate(BaseModel):
     quartier: str | None = None
     commune: str | None = None
     ville: str | None = None
+    secteur_geo_id: str | None = None
 
 
 class ClientUpdate(BaseModel):
@@ -124,6 +155,31 @@ class ClientUpdate(BaseModel):
     quartier: str | None = None
     commune: str | None = None
     ville: str | None = None
+    secteur_geo_id: str | None = None
+
+
+class RegionInput(BaseModel):
+    nom: str
+
+
+class VilleInput(BaseModel):
+    nom: str
+    region_id: str
+
+
+class CommuneInput(BaseModel):
+    nom: str
+    ville_id: str
+
+
+class QuartierGeoInput(BaseModel):
+    nom: str
+    commune_id: str
+
+
+class SecteurGeoInput(BaseModel):
+    nom: str
+    quartier_id: str
 
 
 class StockLigneCreate(BaseModel):
@@ -181,7 +237,8 @@ class CaisseFermeture(BaseModel):
 class ArticleCommandeInput(BaseModel):
     produit_id: str
     quantite: int
-    prix_unitaire: float | None = None  # si absent, reprend le prix catalogue du produit
+    palier: PalierPrix = PalierPrix.detail  # détermine le prix catalogue de repli et la base de calcul de la remise
+    prix_unitaire: float | None = None  # si absent, reprend le prix catalogue du produit pour ce palier (et cette boutique)
 
 
 class CommandeClientCreate(BaseModel):
@@ -191,6 +248,7 @@ class CommandeClientCreate(BaseModel):
     mode_paiement: ModePaiement
     statut: StatutCommandeClient = StatutCommandeClient.en_attente
     articles: list[ArticleCommandeInput]
+    remise_motif: str | None = None  # obligatoire côté serveur si la remise dépasse le seuil (cf. SEUIL_REMISE)
 
 
 class CommandeClientUpdate(BaseModel):
@@ -199,6 +257,7 @@ class CommandeClientUpdate(BaseModel):
     canal: CanalCommande | None = None
     mode_paiement: ModePaiement | None = None
     articles: list[ArticleCommandeInput] | None = None
+    remise_motif: str | None = None
 
 
 class CommandeFournisseurCreate(BaseModel):
@@ -262,6 +321,10 @@ class TransfertCreate(BaseModel):
 
 class TransfertStatutUpdate(BaseModel):
     statut: StatutTransfert
+    # Utilisé seulement pour statut='recu' — si absent, on suppose que tout est arrivé
+    # (quantite_recue = quantite demandée). motif_ecart obligatoire si quantite_recue < quantite.
+    quantite_recue: int | None = None
+    motif_ecart: str | None = None
 
 
 class LivraisonCreate(BaseModel):
@@ -367,6 +430,15 @@ class MotDePasseOublieRequest(BaseModel):
 class ReinitialisationMotDePasseRequest(BaseModel):
     contact: str
     code: str
+    nouveau_mot_de_passe: str
+
+
+class PushTokenUpdate(BaseModel):
+    push_token: str | None = None
+
+
+class ChangementMotDePasseRequest(BaseModel):
+    mot_de_passe_actuel: str
     nouveau_mot_de_passe: str
 
 

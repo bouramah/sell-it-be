@@ -1,7 +1,9 @@
+import base64
 import os
 import platform
 from datetime import datetime
 from html import escape
+from pathlib import Path
 
 if platform.system() == "Darwin":
     for _path in ("/opt/homebrew/lib", "/usr/local/lib"):
@@ -10,10 +12,18 @@ if platform.system() == "Darwin":
 
 from weasyprint import HTML  # noqa: E402
 
+_LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo.jpeg"
+_LOGO_DATA_URI = (
+    "data:image/jpeg;base64," + base64.b64encode(_LOGO_PATH.read_bytes()).decode()
+    if _LOGO_PATH.exists()
+    else None
+)
+
 STYLE = """
 @page { size: A4; margin: 2cm; }
 body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1e293b; font-size: 11pt; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f766e; padding-bottom: 12px; margin-bottom: 20px; }
+.logo { height: 34px; display: block; margin-bottom: 4px; }
 .brand { font-size: 20pt; font-weight: bold; color: #0f766e; }
 .brand-sub { font-size: 9pt; color: #64748b; }
 .doc-title { text-align: right; }
@@ -67,13 +77,18 @@ def document_shell(
           <div class="box">{escape(signatures[1])}</div>
         </div>
         """
+    brand_html = (
+        f'<img class="logo" src="{_LOGO_DATA_URI}" alt="KFSTORE" />'
+        if _LOGO_DATA_URI
+        else '<div class="brand">KFSTORE</div>'
+    )
     return f"""
     <html>
     <head><meta charset="utf-8"><style>{STYLE}</style></head>
     <body>
       <div class="header">
         <div>
-          <div class="brand">KFSTORE</div>
+          {brand_html}
           <div class="brand-sub">GROUPE SKF SARL</div>
         </div>
         <div class="doc-title">

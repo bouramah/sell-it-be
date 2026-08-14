@@ -48,6 +48,7 @@ def modifier_parametre_securite(
     if not p:
         raise HTTPException(status_code=404, detail="Paramètre introuvable")
     p.actif = payload.actif
+    p.updated_by = f"{current_user.prenom} {current_user.nom}"
     log_audit(
         db,
         f"Paramètre de sécurité { 'activé' if payload.actif else 'désactivé' } — {p.label}",

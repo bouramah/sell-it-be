@@ -46,6 +46,7 @@ def create_caisse(
 ) -> CaisseDB:
     require_permission(db, current_user, CAISSE_OUVERTURE)
     assert_boutique_access(current_user, payload.boutique_id)
+    auteur = f"{current_user.prenom} {current_user.nom}"
     c = CaisseDB(
         id=str(uuid.uuid4())[:8],
         boutique_id=payload.boutique_id,
@@ -55,6 +56,8 @@ def create_caisse(
         solde_theorique=payload.fond_initial,
         solde_reel=payload.fond_initial,
         operateur=payload.operateur,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(c)
     db.commit()
@@ -76,6 +79,7 @@ def fermer_caisse(
     assert_boutique_access(current_user, c.boutique_id)
     c.solde_reel = payload.solde_reel
     c.statut = StatutCaisse.fermee if payload.solde_reel == c.solde_theorique else StatutCaisse.ecart_signale
+    c.updated_by = f"{current_user.prenom} {current_user.nom}"
     if c.statut == StatutCaisse.ecart_signale:
         ecart = abs(payload.solde_reel - c.solde_theorique)
         log_audit(
@@ -101,6 +105,7 @@ def rouvrir_caisse(
     require_permission(db, current_user, CAISSE_OUVERTURE)
     assert_boutique_access(current_user, c.boutique_id)
     c.statut = StatutCaisse.ouverte
+    c.updated_by = f"{current_user.prenom} {current_user.nom}"
     db.commit()
     db.refresh(c)
     return c
@@ -145,6 +150,7 @@ def create_mouvement_caisse(
 
     signed_montant = payload.montant if payload.type == TypeMouvementCaisse.encaissement else -payload.montant
     now = datetime.now(timezone.utc)
+    auteur = f"{current_user.prenom} {current_user.nom}"
     m = MouvementCaisseDB(
         id=str(uuid.uuid4())[:8],
         horodatage=now,
@@ -155,9 +161,12 @@ def create_mouvement_caisse(
         motif=payload.motif,
         operateur=payload.operateur,
         montant=signed_montant,
+        created_by=auteur,
+        updated_by=auteur,
     )
     db.add(m)
     caisse.solde_theorique += signed_montant
+    caisse.updated_by = auteur
     db.commit()
     return LigneMouvementCaisse(
         id=m.id,

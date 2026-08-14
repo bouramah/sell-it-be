@@ -111,6 +111,12 @@ class StatutValidationDepense(str, Enum):
     validee_siege = "validee_siege"
 
 
+class StatutValidationRemise(str, Enum):
+    aucune = "aucune"
+    en_attente = "en_attente"
+    validee = "validee"
+
+
 class StatutTransfert(str, Enum):
     demande = "demande"
     valide = "valide"
@@ -160,6 +166,7 @@ class Boutique(BaseModel):
     telephone: str
     latitude: float | None = None
     longitude: float | None = None
+    secteur_geo_id: str | None = None
 
 
 class Fournisseur(BaseModel):
@@ -168,6 +175,7 @@ class Fournisseur(BaseModel):
     secteur: str
     conditions_paiement: str
     contact: str
+    secteur_geo_id: str | None = None
 
 
 class Utilisateur(BaseModel):
@@ -179,6 +187,7 @@ class Utilisateur(BaseModel):
     boutique_ids: list[str]
     statut: str
     derniere_connexion: datetime | None = None
+    secteur_geo_id: str | None = None
 
 
 class PermissionLigne(BaseModel):
@@ -191,6 +200,37 @@ class RoleInfo(BaseModel):
     libelle: str
     portee: str
     systeme: bool
+
+
+# --- Découpage administratif (Région > Ville > Commune > Quartier > Secteur) ------------------
+
+class Region(BaseModel):
+    id: str
+    nom: str
+
+
+class Ville(BaseModel):
+    id: str
+    nom: str
+    region_id: str
+
+
+class Commune(BaseModel):
+    id: str
+    nom: str
+    ville_id: str
+
+
+class QuartierGeo(BaseModel):
+    id: str
+    nom: str
+    commune_id: str
+
+
+class SecteurGeo(BaseModel):
+    id: str
+    nom: str
+    quartier_id: str
 
 
 # --- Clients & paiements ----------------------------------------------------
@@ -206,6 +246,7 @@ class Client(BaseModel):
     quartier: str | None = None
     commune: str | None = None
     ville: str | None = None
+    secteur_geo_id: str | None = None
 
 
 class PaiementClient(BaseModel):
@@ -241,16 +282,50 @@ class ProduitImage(BaseModel):
     position: int
 
 
+class PalierPrix(str, Enum):
+    detail = "detail"
+    semi_gros = "semi_gros"
+    gros = "gros"
+
+
 class Produit(BaseModel):
     id: str
     nom: str
     secteur: str
     categorie: str
-    prix: float
+    prix_detail: float
+    prix_semi_gros: float
+    prix_gros: float
+    seuil_semi_gros: int = 10
+    seuil_gros: int = 50
     unite: str
     code_barres: str
     date_peremption: date | None = None
     images: list[ProduitImage] = []
+
+
+class PrixPeriode(BaseModel):
+    id: str
+    produit_id: str
+    boutique_id: str | None = None
+    palier: PalierPrix
+    prix: float
+    date_debut: date
+    date_fin: date | None = None
+    modifie_par: str
+    cree_le: datetime
+
+
+class PrixAchat(BaseModel):
+    id: str
+    produit_id: str
+    fournisseur_id: str
+    palier: PalierPrix
+    prix: float
+    date_debut: date
+    date_fin: date | None = None
+    modifie_par: str
+    cree_le: datetime
 
 
 class StockBoutique(BaseModel):
@@ -322,6 +397,10 @@ class CommandeClient(BaseModel):
     montant: float
     statut: StatutCommandeClient
     date_creation: datetime
+    remise_statut: StatutValidationRemise = StatutValidationRemise.aucune
+    remise_motif: str | None = None
+    remise_validee_par: str | None = None
+    remise_validee_le: datetime | None = None
 
 
 class ArticleCommande(BaseModel):
@@ -329,7 +408,9 @@ class ArticleCommande(BaseModel):
     produit_id: str
     produit_nom: str
     quantite: int
+    palier: PalierPrix
     prix_unitaire: float
+    prix_catalogue_a_la_vente: float | None = None
 
 
 class CommandeClientDetail(CommandeClient):
@@ -346,7 +427,14 @@ class LigneCommandeFournisseur(BaseModel):
     date_reception: date | None = None
 
 
-class ArticleCommandeFournisseur(ArticleCommande):
+class ArticleCommandeFournisseur(BaseModel):
+    # Pas de palier détail/semi-gros/gros ici : ce ne sont pas des prix de vente client,
+    # cf. commandes.py — un achat fournisseur n'est pas rattaché à ArticleCommande.
+    id: str
+    produit_id: str
+    produit_nom: str
+    quantite: int
+    prix_unitaire: float
     quantite_recue: int
 
 
@@ -415,6 +503,8 @@ class TransfertStock(BaseModel):
     quantite: int
     demandeur: str
     statut: StatutTransfert
+    quantite_recue: int | None = None
+    motif_ecart: str | None = None
 
 
 # --- Comptabilité ------------------------------------------------------------------
