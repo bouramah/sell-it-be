@@ -28,13 +28,17 @@ PARAMETRES_SECURITE = [
 ]
 
 JOURNAL_AUDIT = [
+    # boutique_id à None : ces entrées de démonstration référençaient des slugs fictifs
+    # ("kankan", "madina"...) qui ne correspondent à aucune boutique réelle (les boutiques
+    # ont des id UUID, seedés bien après cette migration) — violait la FK boutiques.id sur
+    # tout moteur qui l'applique réellement (MySQL/MariaDB ; SQLite l'ignorait silencieusement).
     {"id": "aud-1", "horodatage": datetime(2026, 8, 8, 11, 2), "action": "Modification des droits — S. Bah passé en lecture seule", "auteur": "Sékou Condé", "boutique_id": None},
     {"id": "aud-2", "horodatage": datetime(2026, 8, 8, 10, 40), "action": "Validation transfert de stock #TR-208", "auteur": "Mamadouba Keita", "boutique_id": None},
-    {"id": "aud-3", "horodatage": datetime(2026, 8, 8, 9, 15), "action": "Écart de caisse signalé (45 000 GNF)", "auteur": "Mariama Diallo", "boutique_id": "kankan"},
-    {"id": "aud-4", "horodatage": datetime(2026, 8, 7, 18, 22), "action": "Dépense validée — loyer 1 200 000 GNF", "auteur": "Sékou Condé", "boutique_id": "kankan"},
-    {"id": "aud-5", "horodatage": datetime(2026, 8, 7, 15, 3), "action": "Nouvelle commande fournisseur #FR-318", "auteur": "Ibrahima Sow", "boutique_id": "madina"},
-    {"id": "aud-6", "horodatage": datetime(2026, 8, 7, 9, 47), "action": "Connexion échouée x3 — compte verrouillé", "auteur": "Souleymane Bah", "boutique_id": "kaloum"},
-    {"id": "aud-7", "horodatage": datetime(2026, 8, 5, 16, 10), "action": "Correction d'inventaire — écart +4 unités", "auteur": "Alpha Camara", "boutique_id": "matam"},
+    {"id": "aud-3", "horodatage": datetime(2026, 8, 8, 9, 15), "action": "Écart de caisse signalé (45 000 GNF)", "auteur": "Mariama Diallo", "boutique_id": None},
+    {"id": "aud-4", "horodatage": datetime(2026, 8, 7, 18, 22), "action": "Dépense validée — loyer 1 200 000 GNF", "auteur": "Sékou Condé", "boutique_id": None},
+    {"id": "aud-5", "horodatage": datetime(2026, 8, 7, 15, 3), "action": "Nouvelle commande fournisseur #FR-318", "auteur": "Ibrahima Sow", "boutique_id": None},
+    {"id": "aud-6", "horodatage": datetime(2026, 8, 7, 9, 47), "action": "Connexion échouée x3 — compte verrouillé", "auteur": "Souleymane Bah", "boutique_id": None},
+    {"id": "aud-7", "horodatage": datetime(2026, 8, 5, 16, 10), "action": "Correction d'inventaire — écart +4 unités", "auteur": "Alpha Camara", "boutique_id": None},
 ]
 
 
