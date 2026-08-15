@@ -1,8 +1,17 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+# Sans ceci, les loggers applicatifs ("kfstore.*" : sms, push, notifications) n'ont aucun
+# handler sous un `uvicorn app.main:app` lancé directement (systemd, gunicorn...) — leurs logs
+# disparaissent silencieusement. En local ils n'apparaissaient que parce que le wrapper de
+# lancement appelait explicitement logging.basicConfig() avant d'importer uvicorn. Root laissé
+# en WARNING (pas de bruit des libs tierces type weasyprint) — seul "kfstore" passe en INFO.
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.getLogger("kfstore").setLevel(logging.INFO)
 
 from app.routers import (
     auth,
