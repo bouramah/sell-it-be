@@ -9,6 +9,7 @@ from fastapi.security import OAuth2PasswordBearer
 from app.core.config import settings
 from app.core.database import get_db
 from app.db_models.models import UtilisateurDB
+from app.services.securite import parametre_actif
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -47,4 +48,16 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(UtilisateurDB).filter(UtilisateurDB.contact == contact).first()
     if user is None:
         raise credentials_error
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if parametre_actif(db, "expiration_session") and user.derniere_activite:
+        limite = user.derniere_activite + timedelta(minutes=settings.session_inactivite_minutes)
+        if now > limite:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expirée après inactivité, veuillez vous reconnecter",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    user.derniere_activite = now
+    db.commit()
     return user

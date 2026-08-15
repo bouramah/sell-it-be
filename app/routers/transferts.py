@@ -4,13 +4,14 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import a_portee_reseau, boutiques_autorisees, require_permission
+from app.core.authorization import a_portee_reseau, boutiques_autorisees, require_permission, require_separation_des_taches
 from app.core.database import get_db
 from app.core.module_actions import TRANSFERT_DEMANDE, TRANSFERT_RECEPTION, TRANSFERT_VALIDATION
 from app.core.security import get_current_user
 from app.db_models.models import MouvementStockDB, ProduitDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
 from app.models.schemas import MotifMouvementStock, StatutTransfert, TransfertStock
 from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate
+from app.services.audit import log_audit
 from app.services.notifications import nom_boutique, notifier_gerants_boutique
 
 router = APIRouter(prefix="/api/v1/transferts", tags=["transferts"])
@@ -89,9 +90,24 @@ def update_statut(
             t.motif_ecart = payload.motif_ecart if quantite_recue < t.quantite else None
     else:
         require_permission(db, current_user, TRANSFERT_VALIDATION)
+        if payload.statut == StatutTransfert.valide:
+            require_separation_des_taches(db, current_user, t.created_by)
 
+    ancien_statut = t.statut
     t.statut = payload.statut
     t.updated_by = f"{current_user.prenom} {current_user.nom}"
+    if payload.statut == StatutTransfert.valide:
+        log_audit(
+            db, f"Transfert de stock validé — #{t.id}", f"{current_user.prenom} {current_user.nom}",
+            t.boutique_destination_id,
+            valeur_avant={"statut": ancien_statut}, valeur_apres={"statut": t.statut},
+        )
+    elif payload.statut == StatutTransfert.recu:
+        log_audit(
+            db, f"Transfert de stock reçu — #{t.id} ({t.quantite_recue}/{t.quantite})",
+            f"{current_user.prenom} {current_user.nom}", t.boutique_destination_id,
+            valeur_avant={"statut": ancien_statut}, valeur_apres={"statut": t.statut, "quantite_recue": t.quantite_recue, "motif_ecart": t.motif_ecart},
+        )
     db.commit()
     db.refresh(t)
 

@@ -5,14 +5,48 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.authorization import require_permission
 from app.core.database import get_db
-from app.core.module_actions import REFERENTIELS_GESTION
+from app.core.module_actions import REFERENTIELS_GESTION, SECURITE_GESTION
 from app.core.security import get_current_user
 from app.data.fixtures import REFERENTIELS
-from app.db_models.models import ReferentielDB, UtilisateurDB
-from app.models.schemas import ReferentielItem
-from app.models.write_schemas import ReferentielCreate, ReferentielUpdate
+from app.db_models.models import ParametreApplicationDB, ReferentielDB, UtilisateurDB
+from app.models.schemas import ParametreApplication, ReferentielItem
+from app.models.write_schemas import ParametreApplicationUpdate, ReferentielCreate, ReferentielUpdate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1/parametres", tags=["parametres"])
+
+
+@router.get("/application", response_model=list[ParametreApplication])
+def list_parametres_application(
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ParametreApplicationDB]:
+    # Lecture ouverte à tout utilisateur authentifié (pas de require_permission) : l'appli
+    # mobile interne doit pouvoir savoir si le mode hors-ligne est activé quel que soit le
+    # rôle connecté (vendeur, caissier...), avant même d'utiliser la caisse.
+    return sorted(db.query(ParametreApplicationDB).all(), key=lambda p: p.ordre)
+
+
+@router.put("/application/{parametre_id}", response_model=ParametreApplication)
+def modifier_parametre_application(
+    parametre_id: str,
+    payload: ParametreApplicationUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> ParametreApplicationDB:
+    require_permission(db, current_user, SECURITE_GESTION)
+    p = db.get(ParametreApplicationDB, parametre_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Paramètre introuvable")
+    p.actif = payload.actif
+    p.updated_by = f"{current_user.prenom} {current_user.nom}"
+    log_audit(
+        db, f"Paramètre application { 'activé' if payload.actif else 'désactivé' } — {p.label}",
+        f"{current_user.prenom} {current_user.nom}",
+    )
+    db.commit()
+    db.refresh(p)
+    return p
 
 
 def _managed_categories(db: Session) -> list[str]:

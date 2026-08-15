@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission, require_separation_des_taches
 from app.core.database import get_db
 from app.core.module_actions import COMMANDE_CLIENT, COMMANDE_FOURNISSEUR_CREATION, COMMANDE_FOURNISSEUR_RECEPTION, REMISE_VALIDATION
 from app.core.security import get_current_user
@@ -92,6 +92,21 @@ def appliquer_livraison_stock(
             if etait_reservee:
                 stock.quantite_reservee = max(0, stock.quantite_reservee - l.quantite)
             stock.derniere_mouvement = now
+            # Jamais bloquant (une vente déjà encaissée, notamment synchronisée depuis le mode
+            # hors-ligne mobile, doit toujours s'appliquer — CDC §3.7/§8) : un stock qui passe
+            # sous zéro est accepté puis simplement signalé au gérant pour régularisation.
+            if stock.quantite_disponible < 0:
+                produit = db.get(ProduitDB, l.produit_id)
+                log_audit(
+                    db, f"Stock négatif après vente — {produit.nom if produit else l.produit_id} "
+                    f"({stock.quantite_disponible})", operateur, c.boutique_id,
+                )
+                notifier_gerants_boutique(
+                    db, c.boutique_id,
+                    f"Stock négatif détecté sur {produit.nom if produit else l.produit_id} après une vente "
+                    f"({stock.quantite_disponible}) — à régulariser. — KFSTORE",
+                    titre="Stock négatif",
+                )
         db.add(MouvementStockDB(
             id=str(uuid.uuid4())[:8], horodatage=now, produit_id=l.produit_id, boutique_id=c.boutique_id,
             motif=MotifMouvementStock.commande_client,
@@ -315,11 +330,15 @@ def valider_remise_commande_client(
     assert_boutique_access(current_user, c.boutique_id)
     if c.remise_statut != StatutValidationRemise.en_attente:
         raise HTTPException(status_code=400, detail="Cette commande n'a pas de remise en attente de validation")
+    require_separation_des_taches(db, current_user, c.created_by)
 
     c.remise_statut = StatutValidationRemise.validee
     c.remise_validee_par = f"{current_user.prenom} {current_user.nom}"
     c.remise_validee_le = datetime.now(timezone.utc)
-    log_audit(db, f"Remise validée sur commande #{c.id}", c.remise_validee_par, c.boutique_id)
+    log_audit(
+        db, f"Remise validée sur commande #{c.id}", c.remise_validee_par, c.boutique_id,
+        valeur_avant={"remise_statut": "en_attente"}, valeur_apres={"remise_statut": "validee"},
+    )
     db.commit()
     return get_commande_client(commande_id, db, current_user)
 

@@ -12,6 +12,7 @@ from app.core.security import get_current_user
 from app.db_models.models import EcartInventaireDB, MouvementStockDB, ProduitDB, StockBoutiqueDB, UtilisateurDB
 from app.models.schemas import MotifMouvementStock, PalierPrix, StatutEcartInventaire
 from app.models.write_schemas import EcartInventaireCreate, MouvementStockCreate, StockLigneCreate, StockLigneUpdate
+from app.services.audit import log_audit
 from app.services.pricing import prix_effectif_a_date, prix_effectifs_batch, resoudre_prix
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
@@ -260,6 +261,10 @@ def create_mouvement(
         )
         db.add(ligne)
 
+    log_audit(
+        db, f"Mouvement de stock — {produit.nom} ({payload.motif.value}, {payload.quantite:+d})", auteur,
+        payload.boutique_id, valeur_apres={"motif": payload.motif.value, "quantite": payload.quantite, "produit_id": payload.produit_id},
+    )
     db.commit()
     return LigneMouvementStock(
         id=mouvement.id,
@@ -311,6 +316,11 @@ def create_inventaire(
     auteur = f"{current_user.prenom} {current_user.nom}"
     e = EcartInventaireDB(id=str(uuid.uuid4())[:8], statut=statut, created_by=auteur, updated_by=auteur, **payload.model_dump())
     db.add(e)
+    if statut == StatutEcartInventaire.a_investiguer:
+        log_audit(
+            db, f"Écart d'inventaire — {produit.nom} (théorique {payload.theorique}, réel {payload.reel})", auteur,
+            payload.boutique_id, valeur_apres={"theorique": payload.theorique, "reel": payload.reel, "ecart": payload.reel - payload.theorique},
+        )
     db.commit()
     return LigneEcartInventaire(
         id=e.id,

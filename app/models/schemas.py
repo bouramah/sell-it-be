@@ -517,6 +517,37 @@ class CompteResultatBoutique(BaseModel):
     marge_nette: float
 
 
+class EcritureComptable(BaseModel):
+    """Ligne du journal des opérations (CDC §3.14/§7.3) : chaque écriture est reliée à son
+    opération source (vente, achat, dépense, remboursement) et à l'utilisateur qui l'a
+    enregistrée — jamais saisie manuellement, toujours dérivée d'une opération déjà
+    enregistrée dans un autre module (pas de double saisie)."""
+    id: str
+    date: str
+    boutique_id: str
+    nature: str
+    sens: str
+    montant: float
+    libelle: str
+    auteur: str | None
+    operation_source_type: str
+    operation_source_id: str
+
+
+class LigneStockValorise(BaseModel):
+    boutique_id: str
+    produit_id: str
+    produit_nom: str
+    quantite: int
+    cout_unitaire_moyen: float | None
+    valeur: float
+
+
+class EtatStockValorise(BaseModel):
+    lignes: list[LigneStockValorise]
+    valeur_totale: float
+
+
 # --- Promotions & tarifs ------------------------------------------------------------
 
 class Promotion(BaseModel):
@@ -561,6 +592,12 @@ class JournalAuditEntry(BaseModel):
 
 
 class ParametreSecurite(BaseModel):
+    id: str
+    label: str
+    actif: bool
+
+
+class ParametreApplication(BaseModel):
     id: str
     label: str
     actif: bool

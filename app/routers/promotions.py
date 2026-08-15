@@ -3,13 +3,14 @@ import uuid
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
-from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_permission
+from app.core.authorization import a_portee_reseau, assert_boutique_access, boutiques_autorisees, require_permission, require_separation_des_taches
 from app.core.database import get_db
 from app.core.module_actions import PROMOTION_CREATION, PROMOTION_VALIDATION
 from app.core.security import get_current_user
 from app.db_models.models import PromotionDB, UtilisateurDB
 from app.models.schemas import OriginePromotion, Promotion, StatutPromotion
 from app.models.write_schemas import PromotionCreate, PromotionStatutUpdate
+from app.services.audit import log_audit
 
 router = APIRouter(prefix="/api/v1/promotions", tags=["promotions"])
 
@@ -61,8 +62,16 @@ def modifier_statut_promotion(
         raise HTTPException(status_code=404, detail="Promotion introuvable")
     # Validation/refus d'une promotion = décision siège (cf. CDC : statut initial "en_attente_validation").
     require_permission(db, current_user, PROMOTION_VALIDATION)
+    if payload.statut == StatutPromotion.validee:
+        require_separation_des_taches(db, current_user, p.created_by)
+    ancien_statut = p.statut
     p.statut = payload.statut
     p.updated_by = f"{current_user.prenom} {current_user.nom}"
+    if payload.statut == StatutPromotion.validee:
+        log_audit(
+            db, f"Promotion validée — {p.nom}", f"{current_user.prenom} {current_user.nom}", p.boutique_id,
+            valeur_avant={"statut": ancien_statut}, valeur_apres={"statut": p.statut},
+        )
     db.commit()
     db.refresh(p)
     return p

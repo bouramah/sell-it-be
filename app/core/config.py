@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60 * 12
+    # Expiration de session par inactivité (CDC §7.1) — indépendante de jwt_expires_minutes
+    # (durée de vie max du token) : une session inactive au-delà de ce délai est rejetée même
+    # si le token lui-même est encore valide. Piloté par le paramètre de sécurité "expiration_session".
+    session_inactivite_minutes: int = 30
 
     # "nimba" (fournisseur retenu, cf. app/services/sms.py) ou "console" (par défaut,
     # journalise sans envoyer — utilisé tant que SMS_API_KEY/SMS_API_SECRET ne sont pas

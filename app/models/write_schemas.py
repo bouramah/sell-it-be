@@ -413,14 +413,27 @@ class ParametreSecuriteUpdate(BaseModel):
     actif: bool
 
 
+class ParametreApplicationUpdate(BaseModel):
+    actif: bool
+
+
 class LoginRequest(BaseModel):
     contact: str
     mot_de_passe: str
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    # otp_requis=True : mot de passe correct mais 2FA obligatoire pour ce rôle (CDC §7.1) —
+    # access_token est alors absent, le client doit appeler /auth/verifier-2fa avec le code
+    # reçu par SMS pour obtenir le token.
+    otp_requis: bool = False
+    access_token: str | None = None
     token_type: str = "bearer"
+
+
+class Verifier2FARequest(BaseModel):
+    contact: str
+    code: str
 
 
 class MotDePasseOublieRequest(BaseModel):

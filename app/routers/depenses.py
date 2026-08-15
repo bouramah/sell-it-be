@@ -5,7 +5,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission
+from app.core.authorization import apply_boutique_filter, assert_boutique_access, require_permission, require_separation_des_taches
 from app.core.database import get_db
 from app.core.module_actions import DEPENSE_CREATION, DEPENSE_VALIDATION_SEUIL
 from app.core.security import get_current_user
@@ -96,6 +96,8 @@ def valider_depense(
     require_permission(db, current_user, DEPENSE_VALIDATION_SEUIL)
     if d.statut_validation != StatutValidationDepense.en_attente:
         raise HTTPException(status_code=400, detail="Cette dépense n'est pas en attente de validation")
+    require_separation_des_taches(db, current_user, d.created_by)
+    ancien_statut = d.statut_validation
     d.statut_validation = StatutValidationDepense.validee_siege
     d.updated_by = f"{current_user.prenom} {current_user.nom}"
     log_audit(
@@ -103,6 +105,8 @@ def valider_depense(
         f"Dépense validée — {d.categorie} {d.montant:,.0f} GNF".replace(",", " "),
         f"{current_user.prenom} {current_user.nom}",
         d.boutique_id,
+        valeur_avant={"statut_validation": ancien_statut},
+        valeur_apres={"statut_validation": d.statut_validation},
     )
     db.commit()
     db.refresh(d)

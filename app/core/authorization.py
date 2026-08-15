@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db_models.models import PermissionDB, UtilisateurDB
 from app.models.schemas import DroitAcces
+from app.services.securite import parametre_actif
 
 ROLE_ADMINISTRATEUR = "administrateur"
 
@@ -91,3 +92,18 @@ def require_permission(db: Session, user: UtilisateurDB, *module_actions: str) -
     )
     if not rows or all(r.droit == DroitAcces.aucun for r in rows):
         raise HTTPException(status_code=403, detail="Action non autorisée pour votre rôle")
+
+
+def require_separation_des_taches(db: Session, user: UtilisateurDB, createur: str | None) -> None:
+    """Refuse qu'un utilisateur valide une opération sensible qu'il a lui-même initiée
+    (CDC §7.2, critère d'acceptation §11) — piloté par le paramètre de sécurité
+    "double_validation" (page Sécurité), désactivable par l'administrateur si besoin.
+    createur=None (donnée ancienne, avant traçage de created_by) laisse passer : on ne
+    peut pas prouver une violation sans savoir qui a initié."""
+    if not createur or not parametre_actif(db, "double_validation"):
+        return
+    if createur == f"{user.prenom} {user.nom}":
+        raise HTTPException(
+            status_code=400,
+            detail="Vous ne pouvez pas valider une opération que vous avez vous-même initiée (séparation des tâches)",
+        )

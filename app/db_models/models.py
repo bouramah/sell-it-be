@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Column, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Table, Column, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -120,6 +120,13 @@ class UtilisateurDB(AuditMixin, Base):
     derniere_connexion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     push_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
+    # Verrouillage après tentatives échouées (CDC §7.1) — piloté par le paramètre de
+    # sécurité "verrouillage_tentatives" (voir ParametreSecuriteDB).
+    tentatives_echouees: Mapped[int] = mapped_column(Integer, default=0)
+    verrouille_jusqua: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Expiration de session par inactivité (CDC §7.1) — piloté par le paramètre de
+    # sécurité "expiration_session" ; mis à jour à chaque requête authentifiée.
+    derniere_activite: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     role_ref: Mapped["RoleDB"] = relationship(foreign_keys=[role], lazy="joined")
     boutiques: Mapped[list["BoutiqueDB"]] = relationship(
@@ -536,6 +543,10 @@ class JournalAuditDB(Base):
     auteur: Mapped[str] = mapped_column(String(160))
     # SET NULL (pas CASCADE) : le journal est immuable et doit survivre à la suppression de la boutique référencée.
     boutique_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("boutiques.id", ondelete="SET NULL"), nullable=True)
+    # Valeur avant/après en JSON texte (CDC §7.3) — nullable : de nombreuses actions
+    # journalisées (connexion, envoi de code...) n'ont pas de valeur métier à comparer.
+    valeur_avant: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valeur_apres: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ParametreSecuriteDB(AuditMixin, Base):
@@ -547,14 +558,29 @@ class ParametreSecuriteDB(AuditMixin, Base):
     ordre: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class ParametreApplicationDB(AuditMixin, Base):
+    """Interrupteurs fonctionnels globaux (distincts des paramètres de sécurité §7) — lecture
+    ouverte à tout utilisateur authentifié (l'appli mobile interne doit pouvoir savoir si le
+    mode hors-ligne est activé avant même d'être un compte admin), écriture réservée à
+    l'administrateur via SECURITE_GESTION."""
+    __tablename__ = "parametres_application"
+
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    label: Mapped[str] = mapped_column(String(200))
+    actif: Mapped[bool] = mapped_column(Boolean, default=False)
+    ordre: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class OtpCodeDB(AuditMixin, Base):
-    """Code à usage unique envoyé par SMS — réinitialisation de mot de passe
-    aujourd'hui, base réutilisable pour la 2FA (CDC §7.2) plus tard."""
+    """Code à usage unique envoyé par SMS — réinitialisation de mot de passe ou
+    2FA à la connexion (CDC §7.1), distingués par `objectif` pour qu'un code
+    généré pour l'un ne puisse jamais être rejoué pour l'autre."""
     __tablename__ = "otp_codes"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     contact: Mapped[str] = mapped_column(String(30))
     code_hash: Mapped[str] = mapped_column(String(255))
+    objectif: Mapped[str] = mapped_column(String(20), default="reinitialisation")
     created_at: Mapped[datetime] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used: Mapped[bool] = mapped_column(Boolean, default=False)
