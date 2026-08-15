@@ -142,9 +142,13 @@ def get_commande_client(
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
     assert_boutique_access(current_user, c.boutique_id)
+    return _serialiser_commande_client(db, c)
+
+
+def _serialiser_commande_client(db: Session, c: CommandeClientDB) -> CommandeClientDetail:
     produits = _produits_by_id(db, {l.produit_id for l in c.lignes}) if c.lignes else {}
     return CommandeClientDetail(
-        id=c.id, client_nom=c.client_nom, boutique_id=c.boutique_id, canal=c.canal,
+        id=c.id, client_nom=c.client_nom, client_id=c.client_id, boutique_id=c.boutique_id, canal=c.canal,
         mode_paiement=c.mode_paiement, montant=c.montant, statut=c.statut, date_creation=c.date_creation,
         remise_statut=c.remise_statut, remise_motif=c.remise_motif,
         remise_validee_par=c.remise_validee_par, remise_validee_le=c.remise_validee_le,
@@ -159,22 +163,18 @@ def get_commande_client(
     )
 
 
-@router.post("/commandes-clients", response_model=CommandeClientDetail, status_code=201)
-def create_commande_client(
-    payload: CommandeClientCreate,
-    db: Session = Depends(get_db),
-    current_user: UtilisateurDB = Depends(get_current_user),
-) -> CommandeClientDetail:
-    require_permission(db, current_user, COMMANDE_CLIENT)
-    assert_boutique_access(current_user, payload.boutique_id)
+def creer_commande_client(db: Session, payload: CommandeClientCreate, auteur: str) -> CommandeClientDB:
+    """Cœur de la création d'une commande client — partagé entre la route interne
+    (personnel, /commandes-clients) et la route de l'appli mobile client (/mes-commandes,
+    cf. app/routers/mes_commandes.py) pour ne jamais faire diverger la logique de prix, de
+    remise, de réservation de stock et de notification entre les deux canaux."""
     if not payload.articles:
         raise HTTPException(status_code=400, detail="La commande doit contenir au moins un article")
     produits = _produits_by_id(db, {a.produit_id for a in payload.articles})
     aujourdhui = date.today()
 
-    auteur = f"{current_user.prenom} {current_user.nom}"
     c = CommandeClientDB(
-        id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, boutique_id=payload.boutique_id,
+        id=str(uuid.uuid4())[:8], client_nom=payload.client_nom, client_id=payload.client_id, boutique_id=payload.boutique_id,
         canal=payload.canal, mode_paiement=payload.mode_paiement, statut=payload.statut, montant=0.0,
         created_by=auteur, updated_by=auteur,
     )
@@ -193,7 +193,7 @@ def create_commande_client(
     if c.remise_statut == StatutValidationRemise.en_attente:
         log_audit(
             db, f"Remise en attente de validation sur commande #{c.id} — motif : {c.remise_motif}",
-            f"{current_user.prenom} {current_user.nom}", c.boutique_id,
+            auteur, c.boutique_id,
         )
         notifier_gerants_boutique(
             db, c.boutique_id, f"Remise en attente de validation — commande #{c.id} ({c.client_nom}) — motif : {c.remise_motif}",
@@ -223,7 +223,21 @@ def create_commande_client(
         f"({montant:,.0f} GNF). Nous vous tiendrons informé de son statut. — KFSTORE".replace(",", " "),
     )
 
-    return get_commande_client(c.id, db, current_user)
+    db.refresh(c)
+    return c
+
+
+@router.post("/commandes-clients", response_model=CommandeClientDetail, status_code=201)
+def create_commande_client(
+    payload: CommandeClientCreate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> CommandeClientDetail:
+    require_permission(db, current_user, COMMANDE_CLIENT)
+    assert_boutique_access(current_user, payload.boutique_id)
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    c = creer_commande_client(db, payload, auteur)
+    return _serialiser_commande_client(db, c)
 
 
 @router.put("/commandes-clients/{commande_id}", response_model=CommandeClientDetail)

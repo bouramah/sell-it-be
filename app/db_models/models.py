@@ -16,6 +16,7 @@ from app.models.schemas import (
     StatutCaisse,
     StatutCommandeClient,
     StatutCommandeFournisseur,
+    StatutDemandeCredit,
     StatutDette,
     StatutEcartInventaire,
     StatutLivraison,
@@ -275,7 +276,9 @@ class ClientDB(AuditMixin, Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
-    contact: Mapped[str] = mapped_column(String(60))
+    # unique : sert désormais aussi d'identifiant de connexion à l'appli mobile client (§6.1 —
+    # authentification par numéro de téléphone + code à usage unique).
+    contact: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     segment: Mapped[SegmentClient] = mapped_column(Enum(SegmentClient))
     credit_autorise: Mapped[bool] = mapped_column(Boolean, default=False)
     quartier: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -354,6 +357,10 @@ class CommandeClientDB(AuditMixin, Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     client_nom: Mapped[str] = mapped_column(String(160))
+    # Lien fiable vers le client authentifié qui a passé cette commande (appli mobile client) —
+    # nullable : une vente directe en boutique ("client de passage") n'a pas forcément
+    # d'identité client formelle. client_nom reste la source d'affichage/historique.
+    client_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     canal: Mapped[CanalCommande] = mapped_column(Enum(CanalCommande))
     mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
@@ -416,6 +423,9 @@ class DetteDB(AuditMixin, Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     tiers_type: Mapped[TiersType] = mapped_column(Enum(TiersType))
     tiers_nom: Mapped[str] = mapped_column(String(160))
+    # Lien fiable vers le client authentifié (créance client uniquement — une dette fournisseur
+    # n'a pas de client_id) — nullable pour les mêmes raisons que CommandeClientDB.client_id.
+    client_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True)
     boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     montant_initial: Mapped[float] = mapped_column(Float)
     solde_restant: Mapped[float] = mapped_column(Float)
@@ -437,6 +447,22 @@ class RemboursementDB(AuditMixin, Base):
     operateur: Mapped[str] = mapped_column(String(120))
 
     dette: Mapped["DetteDB"] = relationship(back_populates="remboursements")
+
+
+class DemandeCreditDB(AuditMixin, Base):
+    """Demande de crédit initiée par un client depuis l'appli mobile — jamais de dette créée
+    automatiquement : une validation côté boutique (staff) est requise (cf. mon_credit.py /
+    dettes.py), conformément au CDC §3.1 : "Aucune opération de crédit n'est activée sans
+    validation d'un utilisateur habilité de la boutique"."""
+    __tablename__ = "demandes_credit"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(40), ForeignKey("clients.id", ondelete="CASCADE"))
+    boutique_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
+    montant_souhaite: Mapped[float] = mapped_column(Float)
+    motif: Mapped[str] = mapped_column(String(255))
+    statut: Mapped[StatutDemandeCredit] = mapped_column(Enum(StatutDemandeCredit), default=StatutDemandeCredit.en_attente)
+    date_creation: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class TransfertStockDB(AuditMixin, Base):

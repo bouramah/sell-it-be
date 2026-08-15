@@ -47,6 +47,12 @@ class TiersType(str, Enum):
     fournisseur = "fournisseur"
 
 
+class StatutDemandeCredit(str, Enum):
+    en_attente = "en_attente"
+    validee = "validee"
+    refusee = "refusee"
+
+
 class StatutPaiement(str, Enum):
     encaisse = "encaisse"
     en_attente = "en_attente"
@@ -391,6 +397,7 @@ class MouvementCaisse(BaseModel):
 class CommandeClient(BaseModel):
     id: str
     client_nom: str
+    client_id: str | None = None
     boutique_id: str
     canal: CanalCommande
     mode_paiement: ModePaiement
@@ -491,6 +498,20 @@ class Remboursement(BaseModel):
     mode_paiement: ModePaiement
     date: date
     operateur: str
+
+
+class DemandeCredit(BaseModel):
+    """Demande de crédit initiée par un client depuis l'appli mobile (CDC §3.1/§3.8) —
+    reçue et validée par la boutique avant toute prise en compte effective (jamais de
+    dette créée automatiquement à la demande)."""
+    id: str
+    client_id: str
+    client_nom: str
+    boutique_id: str
+    montant_souhaite: float
+    motif: str
+    statut: StatutDemandeCredit
+    date_creation: datetime
 
 
 # --- Transferts de stock -----------------------------------------------------------

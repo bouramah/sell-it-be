@@ -166,8 +166,16 @@ def facture_pdf(
     if not c:
         raise HTTPException(status_code=404, detail="Commande introuvable")
     assert_boutique_access(current_user, c.boutique_id)
+    return generer_facture_pdf(db, c)
+
+
+def generer_facture_pdf(db: Session, c: CommandeClientDB) -> Response:
+    """Partagé entre la route interne (personnel) et la route de l'appli mobile client
+    (/mes-commandes/{id}/facture.pdf, cf. app/routers/mes_commandes.py) — même document,
+    peu importe le canal d'où on le télécharge (CDC §3.5 : "historique des commandes et
+    factures consultables et téléchargeables par le client depuis l'application mobile")."""
     boutique = db.get(BoutiqueDB, c.boutique_id)
-    client = db.query(ClientDB).filter(ClientDB.nom == c.client_nom).first()
+    client = db.get(ClientDB, c.client_id) if c.client_id else db.query(ClientDB).filter(ClientDB.nom == c.client_nom).first()
     produits = {p.id: p for p in db.query(ProduitDB).all()}
 
     rows = [

@@ -243,6 +243,7 @@ class ArticleCommandeInput(BaseModel):
 
 class CommandeClientCreate(BaseModel):
     client_nom: str
+    client_id: str | None = None
     boutique_id: str
     canal: CanalCommande
     mode_paiement: ModePaiement
@@ -299,6 +300,7 @@ class ReceptionCreate(BaseModel):
 class DetteCreate(BaseModel):
     tiers_type: TiersType
     tiers_nom: str
+    client_id: str | None = None
     boutique_id: str
     montant_initial: float
     echeance: date
@@ -462,3 +464,42 @@ class UtilisateurConnecte(BaseModel):
     contact: str
     role: str
     boutique_ids: list[str]
+
+
+# --- Appli mobile client (grand public) — CDC §3.1/§6.1 ---------------------------------
+
+
+class DemanderCodeClientRequest(BaseModel):
+    contact: str
+
+
+class VerifierCodeClientRequest(BaseModel):
+    contact: str
+    code: str
+
+
+class ClientTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    nouveau_compte: bool = False
+
+
+class ClientProfilUpdate(BaseModel):
+    nom: str
+    quartier: str | None = None
+    commune: str | None = None
+    ville: str | None = None
+    secteur_geo_id: str | None = None
+
+
+class DemandeCreditCreate(BaseModel):
+    boutique_id: str
+    montant_souhaite: float
+    motif: str
+
+
+class NotifierRemboursementRequest(BaseModel):
+    dette_id: str
+    montant: float
+    mode_paiement: ModePaiement
+    note: str | None = None

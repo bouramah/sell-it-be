@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.core.security import get_current_user
 from app.db_models.models import (
     CaisseDB,
     ClientDB,
+    DemandeCreditDB,
     DetteDB,
     FournisseurDB,
     MouvementCaisseDB,
@@ -20,7 +21,7 @@ from app.db_models.models import (
     RemboursementDB,
     UtilisateurDB,
 )
-from app.models.schemas import Remboursement, StatutCaisse, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.schemas import DemandeCredit, Remboursement, StatutCaisse, StatutDemandeCredit, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 from app.services.audit import log_audit
 from app.services.sms import get_sms_provider
@@ -31,6 +32,7 @@ router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
 class LigneDette(BaseModel):
     id: str
     tiers_nom: str
+    client_id: str | None = None
     boutique_id: str
     montant_initial: float
     solde_restant: float
@@ -42,6 +44,7 @@ def _to_ligne(d: DetteDB) -> LigneDette:
     return LigneDette(
         id=d.id,
         tiers_nom=d.tiers_nom,
+        client_id=d.client_id,
         boutique_id=d.boutique_id,
         montant_initial=d.montant_initial,
         solde_restant=d.solde_restant,
@@ -76,6 +79,7 @@ def create_dette(
         id=str(uuid.uuid4())[:8],
         tiers_type=payload.tiers_type,
         tiers_nom=payload.tiers_nom,
+        client_id=payload.client_id,
         boutique_id=payload.boutique_id,
         montant_initial=payload.montant_initial,
         solde_restant=payload.montant_initial,
@@ -209,3 +213,87 @@ def envoyer_rappel_sms(
     log_audit(db, f"Rappel SMS envoyé — {d.tiers_nom} ({montant} GNF)", f"{current_user.prenom} {current_user.nom}", d.boutique_id)
     db.commit()
     return _to_ligne(d)
+
+
+@router.get("/demandes-credit", response_model=list[DemandeCredit])
+def list_demandes_credit(
+    boutique_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[DemandeCredit]:
+    """Demandes de crédit initiées depuis l'appli mobile client, en attente de décision
+    staff (CDC §3.1/§3.8) — jamais de dette créée sans cette validation."""
+    query = apply_boutique_filter(db.query(DemandeCreditDB), DemandeCreditDB.boutique_id, current_user, boutique_id)
+    demandes = sorted(query.all(), key=lambda d: d.date_creation, reverse=True)
+    clients_by_id = {c.id: c for c in db.query(ClientDB).all()}
+    return [
+        DemandeCredit(
+            id=d.id, client_id=d.client_id, client_nom=clients_by_id[d.client_id].nom if d.client_id in clients_by_id else "—",
+            boutique_id=d.boutique_id, montant_souhaite=d.montant_souhaite, motif=d.motif,
+            statut=d.statut, date_creation=d.date_creation,
+        )
+        for d in demandes
+    ]
+
+
+@router.post("/demandes-credit/{demande_id}/valider", response_model=DemandeCredit)
+def valider_demande_credit(
+    demande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> DemandeCredit:
+    d = db.get(DemandeCreditDB, demande_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Demande introuvable")
+    require_permission(db, current_user, DETTE_CREATION)
+    assert_boutique_access(current_user, d.boutique_id)
+    if d.statut != StatutDemandeCredit.en_attente:
+        raise HTTPException(status_code=400, detail="Cette demande a déjà été traitée")
+
+    client = db.get(ClientDB, d.client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Client introuvable")
+    auteur = f"{current_user.prenom} {current_user.nom}"
+
+    dette = DetteDB(
+        id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=client.nom, client_id=client.id,
+        boutique_id=d.boutique_id, montant_initial=d.montant_souhaite, solde_restant=d.montant_souhaite,
+        echeance=date.today() + timedelta(days=30), statut=StatutDette.en_cours,
+        created_by=auteur, updated_by=auteur,
+    )
+    db.add(dette)
+    d.statut = StatutDemandeCredit.validee
+    d.updated_by = auteur
+    log_audit(db, f"Demande de crédit validée — {client.nom} ({d.montant_souhaite:,.0f} GNF)".replace(",", " "), auteur, d.boutique_id)
+    db.commit()
+    db.refresh(d)
+    return DemandeCredit(
+        id=d.id, client_id=d.client_id, client_nom=client.nom, boutique_id=d.boutique_id,
+        montant_souhaite=d.montant_souhaite, motif=d.motif, statut=d.statut, date_creation=d.date_creation,
+    )
+
+
+@router.post("/demandes-credit/{demande_id}/refuser", response_model=DemandeCredit)
+def refuser_demande_credit(
+    demande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> DemandeCredit:
+    d = db.get(DemandeCreditDB, demande_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Demande introuvable")
+    require_permission(db, current_user, DETTE_CREATION)
+    assert_boutique_access(current_user, d.boutique_id)
+    if d.statut != StatutDemandeCredit.en_attente:
+        raise HTTPException(status_code=400, detail="Cette demande a déjà été traitée")
+
+    d.statut = StatutDemandeCredit.refusee
+    d.updated_by = f"{current_user.prenom} {current_user.nom}"
+    log_audit(db, f"Demande de crédit refusée — #{d.id}", f"{current_user.prenom} {current_user.nom}", d.boutique_id)
+    db.commit()
+    db.refresh(d)
+    client = db.get(ClientDB, d.client_id)
+    return DemandeCredit(
+        id=d.id, client_id=d.client_id, client_nom=client.nom if client else "—", boutique_id=d.boutique_id,
+        montant_souhaite=d.montant_souhaite, motif=d.motif, statut=d.statut, date_creation=d.date_creation,
+    )

@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 from app.routers import (
     auth,
     caisse,
+    catalogue,
+    client_auth,
     clients,
     commandes,
     comptabilite,
@@ -17,6 +19,8 @@ from app.routers import (
     geographie,
     ia,
     livraisons,
+    mes_commandes,
+    mon_credit,
     notifications,
     parametres,
     produits,
@@ -49,6 +53,10 @@ UPLOADS_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 app.include_router(auth.router)
+app.include_router(client_auth.router)
+app.include_router(catalogue.router)
+app.include_router(mes_commandes.router)
+app.include_router(mon_credit.router)
 app.include_router(reseau.router)
 app.include_router(utilisateurs.router)
 app.include_router(roles.router)
