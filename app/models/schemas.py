@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 # --- Enums ---------------------------------------------------------------
@@ -605,11 +605,24 @@ class ConversationMessage(BaseModel):
 # --- Sécurité & audit ---------------------------------------------------------------
 
 class JournalAuditEntry(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     horodatage: datetime
     action: str
     auteur: str
     boutique_id: str | None
+    utilisateur_id: str | None = None
+    client_id: str | None = None
+    canal: str | None = None
+    methode: str | None = None
+    chemin: str | None = None
+    statut_code: int | None = None
+
+
+class JournalAuditPage(BaseModel):
+    items: list[JournalAuditEntry]
+    total: int
 
 
 class ParametreSecurite(BaseModel):

@@ -573,6 +573,18 @@ class JournalAuditDB(Base):
     # journalisées (connexion, envoi de code...) n'ont pas de valeur métier à comparer.
     valeur_avant: Mapped[str | None] = mapped_column(Text, nullable=True)
     valeur_apres: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Identité structurée en plus du texte libre `auteur` (qui reste la valeur affichée telle
+    # quelle, même après un renommage) — permet de filtrer fiablement "tout ce qu'a fait X" sans
+    # dépendre d'un nom en texte libre. SET NULL : le journal survit à la suppression du compte.
+    utilisateur_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("utilisateurs.id", ondelete="SET NULL"), nullable=True, index=True)
+    client_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    # "web" | "mobile_interne" | "mobile_client" | "inconnu" — déclaré par chaque appli via
+    # l'en-tête X-Client-Canal ; distingue back-office et mobile comme demandé (au-delà du
+    # simple staff/client déjà porté par le claim JWT "typ").
+    canal: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    methode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    chemin: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    statut_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ParametreSecuriteDB(AuditMixin, Base):

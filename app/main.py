@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.core.audit_middleware import AuditTraceMiddleware
+
 # Sans ceci, les loggers applicatifs ("kfstore.*" : sms, push, notifications) n'ont aucun
 # handler sous un `uvicorn app.main:app` lancé directement (systemd, gunicorn...) — leurs logs
 # disparaissent silencieusement. En local ils n'apparaissaient que parce que le wrapper de
@@ -56,6 +58,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuditTraceMiddleware)
 
 UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads"
 UPLOADS_DIR.mkdir(exist_ok=True)
