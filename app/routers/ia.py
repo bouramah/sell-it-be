@@ -111,41 +111,24 @@ def recherche_intelligente(
     return [_vers_recommande(p, dispo, cache, boutique_id, raison) for p in resultats]
 
 
-@router.get("/produits/{produit_id}/similaires", response_model=list[ProduitRecommande])
-def produits_similaires(
-    produit_id: str,
-    boutique_id: str | None = None,
-    limite: int = 6,
-    db: Session = Depends(get_db),
-    current_user: UtilisateurDB = Depends(get_current_user),
-) -> list[ProduitRecommande]:
-    """Mise en avant dynamique (§4.2) : même catégorie d'abord, puis même secteur."""
-    require_permission(db, current_user, MODULES_IA)
+# Logique pure (sans dépendance requête/permission), extraite pour être réutilisée à la fois
+# par ces endpoints staff et par les endpoints publics équivalents de app/routers/catalogue.py
+# (l'appli mobile-client a besoin des mêmes recommandations mais authentifie ses requêtes avec
+# un jeton client, incompatible avec get_current_user/require_permission — cf. security.py).
+
+
+def logique_similaires(db: Session, produit_id: str, limite: int) -> tuple[list[ProduitDB], dict[str, str]]:
     cible = db.get(ProduitDB, produit_id)
     if not cible:
-        return []
+        return [], {}
     candidats = db.query(ProduitDB).filter(ProduitDB.secteur == cible.secteur, ProduitDB.id != produit_id).all()
     candidats.sort(key=lambda p: (p.categorie != cible.categorie, p.nom))
     candidats = candidats[:limite]
-    dispo, cache = _stock_et_prix(db, candidats, boutique_id)
-    return [
-        _vers_recommande(p, dispo, cache, boutique_id, "Même catégorie" if p.categorie == cible.categorie else "Même secteur")
-        for p in candidats
-    ]
+    raisons = {p.id: ("Même catégorie" if p.categorie == cible.categorie else "Même secteur") for p in candidats}
+    return candidats, raisons
 
 
-@router.get("/produits/{produit_id}/complementaires", response_model=list[ProduitRecommande])
-def produits_complementaires(
-    produit_id: str,
-    boutique_id: str | None = None,
-    limite: int = 6,
-    jours: int = 90,
-    db: Session = Depends(get_db),
-    current_user: UtilisateurDB = Depends(get_current_user),
-) -> list[ProduitRecommande]:
-    """Panier-type (§4.2) : produits le plus souvent achetés dans la même commande que
-    produit_id, sur une fenêtre glissante — pas besoin de LLM, une simple analyse de co-achat."""
-    require_permission(db, current_user, MODULES_IA)
+def logique_complementaires(db: Session, produit_id: str, limite: int, jours: int) -> tuple[list[ProduitDB], dict[str, str]]:
     depuis = datetime.utcnow() - timedelta(days=jours)
     commandes_avec_produit = (
         db.query(LigneCommandeClientDB.commande_id)
@@ -166,21 +149,13 @@ def produits_complementaires(
     )
     produits_by_id = {p.id: p for p in db.query(ProduitDB).filter(ProduitDB.id.in_([c.produit_id for c in coachats])).all()}
     candidats = [produits_by_id[c.produit_id] for c in coachats if c.produit_id in produits_by_id]
-    dispo, cache = _stock_et_prix(db, candidats, boutique_id)
-    return [_vers_recommande(p, dispo, cache, boutique_id, "Souvent acheté avec") for p in candidats]
+    raisons = {p.id: "Souvent acheté avec" for p in candidats}
+    return candidats, raisons
 
 
-@router.get("/tendances", response_model=list[ProduitRecommande])
-def tendances(
-    boutique_id: str | None = None,
-    secteur: str | None = None,
-    jours: int = 30,
-    limite: int = 12,
-    db: Session = Depends(get_db),
-    current_user: UtilisateurDB = Depends(get_current_user),
-) -> list[ProduitRecommande]:
-    """Tendances par boutique/secteur (§4.2) : produits les plus vendus sur une fenêtre glissante."""
-    require_permission(db, current_user, MODULES_IA)
+def logique_tendances(
+    db: Session, boutique_id: str | None, secteur: str | None, jours: int, limite: int
+) -> tuple[list[ProduitDB], dict[str, str]]:
     depuis = datetime.utcnow() - timedelta(days=jours)
     query = (
         db.query(LigneCommandeClientDB.produit_id, func.sum(LigneCommandeClientDB.quantite).label("qte"))
@@ -196,11 +171,56 @@ def tendances(
         ventes = [v for v in ventes if v.produit_id in produits_by_id and produits_by_id[v.produit_id].secteur == secteur]
     ventes = ventes[:limite]
     candidats = [produits_by_id[v.produit_id] for v in ventes if v.produit_id in produits_by_id]
+    raisons = {v.produit_id: f"{int(v.qte)} vendus ({jours} j)" for v in ventes if v.produit_id in produits_by_id}
+    return candidats, raisons
+
+
+@router.get("/produits/{produit_id}/similaires", response_model=list[ProduitRecommande])
+def produits_similaires(
+    produit_id: str,
+    boutique_id: str | None = None,
+    limite: int = 6,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ProduitRecommande]:
+    """Mise en avant dynamique (§4.2) : même catégorie d'abord, puis même secteur."""
+    require_permission(db, current_user, MODULES_IA)
+    candidats, raisons = logique_similaires(db, produit_id, limite)
     dispo, cache = _stock_et_prix(db, candidats, boutique_id)
-    return [
-        _vers_recommande(produits_by_id[v.produit_id], dispo, cache, boutique_id, f"{int(v.qte)} vendus ({jours} j)")
-        for v in ventes if v.produit_id in produits_by_id
-    ]
+    return [_vers_recommande(p, dispo, cache, boutique_id, raisons[p.id]) for p in candidats]
+
+
+@router.get("/produits/{produit_id}/complementaires", response_model=list[ProduitRecommande])
+def produits_complementaires(
+    produit_id: str,
+    boutique_id: str | None = None,
+    limite: int = 6,
+    jours: int = 90,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ProduitRecommande]:
+    """Panier-type (§4.2) : produits le plus souvent achetés dans la même commande que
+    produit_id, sur une fenêtre glissante — pas besoin de LLM, une simple analyse de co-achat."""
+    require_permission(db, current_user, MODULES_IA)
+    candidats, raisons = logique_complementaires(db, produit_id, limite, jours)
+    dispo, cache = _stock_et_prix(db, candidats, boutique_id)
+    return [_vers_recommande(p, dispo, cache, boutique_id, raisons[p.id]) for p in candidats]
+
+
+@router.get("/tendances", response_model=list[ProduitRecommande])
+def tendances(
+    boutique_id: str | None = None,
+    secteur: str | None = None,
+    jours: int = 30,
+    limite: int = 12,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ProduitRecommande]:
+    """Tendances par boutique/secteur (§4.2) : produits les plus vendus sur une fenêtre glissante."""
+    require_permission(db, current_user, MODULES_IA)
+    candidats, raisons = logique_tendances(db, boutique_id, secteur, jours, limite)
+    dispo, cache = _stock_et_prix(db, candidats, boutique_id)
+    return [_vers_recommande(p, dispo, cache, boutique_id, raisons[p.id]) for p in candidats]
 
 
 # --- Prévision de la demande (§4.3) -----------------------------------------------------

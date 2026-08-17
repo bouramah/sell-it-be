@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.db_models.models import BoutiqueDB, ProduitDB, StockBoutiqueDB
 from app.models.schemas import PalierPrix, StatutBoutique
+from app.routers.ia import logique_complementaires, logique_similaires, logique_tendances
 from app.services.pricing import prix_effectifs_batch, resoudre_prix
 
 router = APIRouter(prefix="/api/v1/catalogue", tags=["catalogue"])
@@ -47,6 +48,53 @@ class ProduitCatalogue(BaseModel):
     # alors qu'il est déjà entièrement réservé par ailleurs.
     disponible: int
     boutiques_disponibles: list[str]
+
+
+class ProduitRecommandePublic(ProduitCatalogue):
+    # Explique pourquoi ce produit est suggéré ("Souvent acheté avec", "Tendance (7j)"…) — même
+    # forme que ProduitCatalogue pour que l'appli client puisse naviguer directement vers la
+    # fiche produit sans second appel réseau (contrairement à ProduitRecommande côté staff, qui
+    # n'a pas besoin de cette navigation directe).
+    raison: str
+
+
+def _produits_catalogue_avec_stock(
+    db: Session, produits: list[ProduitDB], boutique_id: str | None, boutiques_actives_ids: set[str] | None = None
+) -> list[ProduitCatalogue]:
+    if not produits:
+        return []
+    if boutiques_actives_ids is None:
+        boutiques_actives_ids = {b.id for b in db.query(BoutiqueDB).filter(BoutiqueDB.statut == StatutBoutique.active).all()}
+    ids = {p.id for p in produits}
+    stock_query = db.query(StockBoutiqueDB).filter(
+        StockBoutiqueDB.produit_id.in_(ids), StockBoutiqueDB.boutique_id.in_(boutiques_actives_ids)
+    )
+    if boutique_id:
+        stock_query = stock_query.filter(StockBoutiqueDB.boutique_id == boutique_id)
+    stock_by_produit: dict[str, list[StockBoutiqueDB]] = defaultdict(list)
+    for s in stock_query.all():
+        stock_by_produit[s.produit_id].append(s)
+    cache = prix_effectifs_batch(db, {boutique_id} if boutique_id else set(), ids, date.today())
+
+    resultat = []
+    for p in produits:
+        lignes = stock_by_produit.get(p.id, [])
+        disponible = sum(max(0, l.quantite_disponible - l.quantite_reservee) for l in lignes)
+        boutiques_disponibles = [l.boutique_id for l in lignes if l.quantite_disponible - l.quantite_reservee > 0]
+        resultat.append(ProduitCatalogue(
+            id=p.id, nom=p.nom, secteur=p.secteur, categorie=p.categorie, unite=p.unite,
+            images=[img.url for img in sorted(p.images, key=lambda i: i.position)],
+            prix_detail=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.detail) or 0.0,
+            prix_semi_gros=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.semi_gros) or 0.0,
+            prix_gros=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.gros) or 0.0,
+            disponible=disponible,
+            boutiques_disponibles=boutiques_disponibles,
+        ))
+    return resultat
+
+
+def _vers_recommandes_publics(items: list[ProduitCatalogue], raisons: dict[str, str]) -> list[ProduitRecommandePublic]:
+    return [ProduitRecommandePublic(**item.model_dump(), raison=raisons.get(item.id, "")) for item in items]
 
 
 @router.get("/boutiques", response_model=list[BoutiquePublique])
@@ -98,29 +146,39 @@ def catalogue_produits(
     if not produits:
         return []
 
-    stock_query = db.query(StockBoutiqueDB).filter(StockBoutiqueDB.boutique_id.in_(boutiques_actives_ids))
-    stock_query = stock_query.filter(StockBoutiqueDB.boutique_id == boutique_id) if boutique_id else stock_query
-    stock_by_produit: dict[str, list[StockBoutiqueDB]] = defaultdict(list)
-    for s in stock_query.all():
-        stock_by_produit[s.produit_id].append(s)
-
-    produit_ids = {p.id for p in produits}
-    cache = prix_effectifs_batch(db, {boutique_id} if boutique_id else set(), produit_ids, date.today())
-
-    resultat = []
-    for p in produits:
-        lignes = stock_by_produit.get(p.id, [])
-        disponible = sum(max(0, l.quantite_disponible - l.quantite_reservee) for l in lignes)
-        boutiques_disponibles = [l.boutique_id for l in lignes if l.quantite_disponible - l.quantite_reservee > 0]
-        if boutique_id and disponible == 0:
-            continue
-        resultat.append(ProduitCatalogue(
-            id=p.id, nom=p.nom, secteur=p.secteur, categorie=p.categorie, unite=p.unite,
-            images=[img.url for img in sorted(p.images, key=lambda i: i.position)],
-            prix_detail=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.detail) or 0.0,
-            prix_semi_gros=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.semi_gros) or 0.0,
-            prix_gros=resoudre_prix(cache, boutique_id or "", p.id, PalierPrix.gros) or 0.0,
-            disponible=disponible,
-            boutiques_disponibles=boutiques_disponibles,
-        ))
+    resultat = _produits_catalogue_avec_stock(db, produits, boutique_id, boutiques_actives_ids)
+    if boutique_id:
+        resultat = [p for p in resultat if p.disponible > 0]
     return resultat
+
+
+@router.get("/produits/{produit_id}", response_model=ProduitCatalogue)
+def produit_catalogue(produit_id: str, boutique_id: str | None = None, db: Session = Depends(get_db)) -> ProduitCatalogue:
+    p = db.get(ProduitDB, produit_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Produit introuvable")
+    return _produits_catalogue_avec_stock(db, [p], boutique_id)[0]
+
+
+@router.get("/produits/{produit_id}/similaires", response_model=list[ProduitRecommandePublic])
+def produits_similaires_publics(
+    produit_id: str, boutique_id: str | None = None, limite: int = 6, db: Session = Depends(get_db)
+) -> list[ProduitRecommandePublic]:
+    candidats, raisons = logique_similaires(db, produit_id, limite)
+    return _vers_recommandes_publics(_produits_catalogue_avec_stock(db, candidats, boutique_id), raisons)
+
+
+@router.get("/produits/{produit_id}/complementaires", response_model=list[ProduitRecommandePublic])
+def produits_complementaires_publics(
+    produit_id: str, boutique_id: str | None = None, limite: int = 6, jours: int = 90, db: Session = Depends(get_db)
+) -> list[ProduitRecommandePublic]:
+    candidats, raisons = logique_complementaires(db, produit_id, limite, jours)
+    return _vers_recommandes_publics(_produits_catalogue_avec_stock(db, candidats, boutique_id), raisons)
+
+
+@router.get("/tendances", response_model=list[ProduitRecommandePublic])
+def tendances_publiques(
+    boutique_id: str | None = None, secteur: str | None = None, jours: int = 30, limite: int = 12, db: Session = Depends(get_db)
+) -> list[ProduitRecommandePublic]:
+    candidats, raisons = logique_tendances(db, boutique_id, secteur, jours, limite)
+    return _vers_recommandes_publics(_produits_catalogue_avec_stock(db, candidats, boutique_id), raisons)
