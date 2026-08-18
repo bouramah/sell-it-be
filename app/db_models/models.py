@@ -587,6 +587,19 @@ class JournalAuditDB(Base):
     statut_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class MessageAssistantDB(Base):
+    """Historique des conversations avec l'assistant IA (appli mobile client) — journal
+    immuable comme JournalAuditDB, jamais modifié après écriture. Permet de retrouver la
+    conversation en rouvrant l'écran (sinon perdue à chaque démontage de AssistantScreen)."""
+    __tablename__ = "messages_assistant"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    client_id: Mapped[str] = mapped_column(String(40), ForeignKey("clients.id", ondelete="CASCADE"), index=True)
+    auteur: Mapped[str] = mapped_column(String(10))  # "client" | "bot"
+    texte: Mapped[str] = mapped_column(Text)
+    horodatage: Mapped[datetime] = mapped_column(DateTime)
+
+
 class ParametreSecuriteDB(AuditMixin, Base):
     __tablename__ = "parametres_securite"
 

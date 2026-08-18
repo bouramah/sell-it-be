@@ -2,13 +2,25 @@
 ses propres commandes et son crédit, avec le contexte réel de son compte (jamais celui d'un
 autre client — même scoping strict que mes_commandes.py/mon_credit.py). Passe par IaProvider
 (app/services/ia_provider.py), interchangeable sans réécriture (CDC §6.2)."""
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_client
-from app.db_models.models import BoutiqueDB, ClientDB, CommandeClientDB, DemandeCreditDB, DetteDB, ParametreApplicationDB, ProduitDB
+from app.db_models.models import (
+    BoutiqueDB,
+    ClientDB,
+    CommandeClientDB,
+    DemandeCreditDB,
+    DetteDB,
+    MessageAssistantDB,
+    ParametreApplicationDB,
+    ProduitDB,
+)
 from app.models.schemas import StatutBoutique, StatutCommandeClient, TiersType
 from app.services.ia_provider import get_ia_provider
 
@@ -16,6 +28,7 @@ router = APIRouter(prefix="/api/v1/mon-assistant", tags=["mon-assistant"])
 
 MAX_MESSAGE = 2000
 MAX_HISTORIQUE = 10
+MAX_HISTORIQUE_CHARGEE = 50
 
 MESSAGE_INDISPONIBLE = "L'assistant IA est temporairement désactivé. Contactez votre boutique pour toute question."
 
@@ -32,6 +45,12 @@ class MessageAssistantRequest(BaseModel):
 
 class MessageAssistantResponse(BaseModel):
     reponse: str
+
+
+class MessageStocke(BaseModel):
+    auteur: str
+    texte: str
+    horodatage: datetime
 
 
 def _contexte_client(db: Session, client: ClientDB) -> str:
@@ -139,6 +158,24 @@ SYSTEM_PROMPT = (
 )
 
 
+@router.get("/historique", response_model=list[MessageStocke])
+def historique_conversation(
+    client: ClientDB = Depends(get_current_client),
+    db: Session = Depends(get_db),
+) -> list[MessageStocke]:
+    """Conversation passée avec l'assistant — sans ça, l'historique serait perdu à chaque
+    fois que l'utilisateur quitte l'écran (état local uniquement côté appli)."""
+    messages = (
+        db.query(MessageAssistantDB)
+        .filter(MessageAssistantDB.client_id == client.id)
+        .order_by(MessageAssistantDB.horodatage.desc())
+        .limit(MAX_HISTORIQUE_CHARGEE)
+        .all()
+    )
+    messages.reverse()
+    return [MessageStocke(auteur=m.auteur, texte=m.texte, horodatage=m.horodatage) for m in messages]
+
+
 @router.post("/message", response_model=MessageAssistantResponse)
 def envoyer_message(
     payload: MessageAssistantRequest,
@@ -162,4 +199,10 @@ def envoyer_message(
     messages.append({"role": "user", "content": payload.message})
 
     reponse = get_ia_provider().repondre(system, messages)
+
+    maintenant = datetime.utcnow()
+    db.add(MessageAssistantDB(id=str(uuid.uuid4())[:8], client_id=client.id, auteur="client", texte=payload.message, horodatage=maintenant))
+    db.add(MessageAssistantDB(id=str(uuid.uuid4())[:8], client_id=client.id, auteur="bot", texte=reponse, horodatage=maintenant))
+    db.commit()
+
     return MessageAssistantResponse(reponse=reponse)
