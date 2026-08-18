@@ -1,8 +1,10 @@
-"""IA (chapitre 4 du CDC) — phase 1 MVP (§5) : recherche/recommandation produit et prévision
-de la demande, sans dépendance à un fournisseur LLM (approches classiques : recherche floue,
-co-achat, moyenne de vente réelle). Le chatbot (§4.4) et le reporting en langage naturel (§4.7)
-restent en fixtures pour l'instant — ils nécessitent un fournisseur LLM (§6.2), prévu en phase
-suivante une fois le choix/la clé fournis."""
+"""IA (chapitre 4 du CDC) — phase 1 MVP (§5) : recherche/recommandation produit, prévision de
+la demande (approches classiques, sans LLM : recherche floue, co-achat, moyenne de vente
+réelle), et chatbot service client + reporting intelligent (§4.4/§4.7), qui s'appuient sur
+IaProvider (app/services/ia_provider.py) — bascule automatiquement sur un message de repli
+honnête tant qu'aucune clé fournisseur LLM n'est renseignée (§6.2)."""
+import json
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from difflib import SequenceMatcher
@@ -16,10 +18,22 @@ from app.core.authorization import require_permission
 from app.core.database import get_db
 from app.core.module_actions import MODULES_IA
 from app.core.security import get_current_user
-from app.data.fixtures import ANOMALIES_REPORTING, CHATBOT_CONFIG, CHATBOT_CONVERSATION_DEMO, SYNTHESE_REPORTING
-from app.db_models.models import CommandeClientDB, LigneCommandeClientDB, ProduitDB, StockBoutiqueDB, UtilisateurDB
-from app.models.schemas import AnomalieReporting, ConversationMessage, PalierPrix, StatutCommandeClient
+from app.db_models.models import (
+    BoutiqueDB,
+    CaisseDB,
+    CommandeClientDB,
+    DetteDB,
+    LigneCommandeClientDB,
+    ParametreApplicationDB,
+    ProduitDB,
+    StockBoutiqueDB,
+    UtilisateurDB,
+)
+from app.models.schemas import AnomalieReporting, PalierPrix, StatutBoutique, StatutCaisse, StatutCommandeClient, TiersType
+from app.services.ia_provider import get_ia_provider
 from app.services.pricing import prix_effectifs_batch, resoudre_prix
+
+logger = logging.getLogger("kfstore.ia")
 
 router = APIRouter(prefix="/api/v1/ia", tags=["ia"])
 
@@ -296,12 +310,95 @@ def previsions_demande(
     return resultats
 
 
-# --- Reporting intelligent & chatbot (§4.4, §4.7) — nécessitent un fournisseur LLM ------
-# Phase suivante une fois le choix de fournisseur (OpenAI, décidé) et la clé API fournis.
+# --- Reporting intelligent (§4.7) --------------------------------------------------------
+
 
 class ReportingIntelligent(BaseModel):
     synthese: str
     anomalies: list[AnomalieReporting]
+
+
+def _donnees_reporting(db: Session) -> dict:
+    """Agrégats réels (mêmes requêtes que dashboard.py) sur lesquels s'appuie la synthèse —
+    le LLM ne fait que mettre en mots des chiffres déjà calculés, jamais l'inverse."""
+    maintenant = datetime.utcnow()
+    debut_semaine, debut_semaine_precedente = maintenant - timedelta(days=7), maintenant - timedelta(days=14)
+
+    def ca_periode(depuis: datetime, jusqua: datetime) -> float:
+        q = db.query(CommandeClientDB).filter(
+            CommandeClientDB.statut != StatutCommandeClient.annulee,
+            CommandeClientDB.date_creation >= depuis,
+            CommandeClientDB.date_creation < jusqua,
+        )
+        return sum(c.montant for c in q.all())
+
+    ca_semaine = ca_periode(debut_semaine, maintenant)
+    ca_semaine_precedente = ca_periode(debut_semaine_precedente, debut_semaine)
+    variation_ca = ((ca_semaine - ca_semaine_precedente) / ca_semaine_precedente * 100) if ca_semaine_precedente else None
+
+    boutiques_by_id = {b.id: b for b in db.query(BoutiqueDB).all()}
+    commandes_semaine = db.query(CommandeClientDB).filter(
+        CommandeClientDB.statut != StatutCommandeClient.annulee, CommandeClientDB.date_creation >= debut_semaine,
+    ).all()
+    ca_par_boutique: dict[str, float] = defaultdict(float)
+    for c in commandes_semaine:
+        ca_par_boutique[c.boutique_id] += c.montant
+    top_boutique = max(ca_par_boutique.items(), key=lambda t: t[1], default=(None, 0.0))
+
+    all_stock = db.query(StockBoutiqueDB).all()
+    stock_alerte = [s for s in all_stock if s.quantite_disponible <= s.seuil_alerte]
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).all()}
+    top_ruptures = sorted(
+        [s for s in stock_alerte if s.seuil_alerte > 0], key=lambda s: s.quantite_disponible - s.seuil_alerte,
+    )[:3]
+
+    dettes_clients = db.query(DetteDB).filter(DetteDB.tiers_type == TiersType.client).all()
+    total_initial = sum(d.montant_initial for d in dettes_clients)
+    total_recouvre = sum(d.montant_initial - d.solde_restant for d in dettes_clients)
+    taux_recouvrement = (total_recouvre / total_initial * 100) if total_initial else None
+
+    caisses_ecart = db.query(CaisseDB).filter(CaisseDB.statut == StatutCaisse.ecart_signale).all()
+
+    return {
+        "ca_semaine": ca_semaine,
+        "ca_semaine_precedente": ca_semaine_precedente,
+        "variation_ca_pct": variation_ca,
+        "top_boutique_nom": boutiques_by_id[top_boutique[0]].nom if top_boutique[0] in boutiques_by_id else None,
+        "top_boutique_ca": top_boutique[1],
+        "nb_produits_en_alerte_stock": len(stock_alerte),
+        "top_ruptures": [
+            f"{produits_by_id[s.produit_id].nom if s.produit_id in produits_by_id else s.produit_id} "
+            f"({boutiques_by_id[s.boutique_id].nom if s.boutique_id in boutiques_by_id else s.boutique_id}, "
+            f"{s.quantite_disponible} restant)"
+            for s in top_ruptures
+        ],
+        "taux_recouvrement_creances_pct": taux_recouvrement,
+        "solde_creances_client_total": sum(d.solde_restant for d in dettes_clients),
+        "nb_ecarts_caisse_non_justifies": len(caisses_ecart),
+    }
+
+
+def _synthese_repli(d: dict) -> ReportingIntelligent:
+    """Synthèse simple, sans LLM — utilisée si aucune clé n'est configurée ou si l'appel
+    échoue, pour que le reporting reste honnête et disponible même en mode dégradé."""
+    variation = f", {d['variation_ca_pct']:+.0f} % vs semaine précédente" if d["variation_ca_pct"] is not None else ""
+    synthese = (
+        f"Chiffre d'affaires des 7 derniers jours : {d['ca_semaine']:,.0f} GNF{variation}. "
+        f"{d['nb_produits_en_alerte_stock']} produit(s) en alerte de stock réseau. "
+        f"Taux de recouvrement des créances clients : "
+        f"{d['taux_recouvrement_creances_pct']:.0f} %." if d["taux_recouvrement_creances_pct"] is not None
+        else "Aucune créance client enregistrée."
+    ).replace(",", " ")
+    anomalies = [
+        AnomalieReporting(id=f"rupture-{i}", titre="Rupture de stock imminente", description=texte)
+        for i, texte in enumerate(d["top_ruptures"])
+    ]
+    if d["nb_ecarts_caisse_non_justifies"]:
+        anomalies.append(AnomalieReporting(
+            id="ecarts-caisse", titre="Écarts de caisse non justifiés",
+            description=f"{d['nb_ecarts_caisse_non_justifies']} caisse(s) avec un écart signalé non résolu.",
+        ))
+    return ReportingIntelligent(synthese=synthese, anomalies=anomalies)
 
 
 @router.get("/reporting", response_model=ReportingIntelligent)
@@ -310,7 +407,51 @@ def reporting_intelligent(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> ReportingIntelligent:
     require_permission(db, current_user, MODULES_IA)
-    return ReportingIntelligent(synthese=SYNTHESE_REPORTING, anomalies=ANOMALIES_REPORTING)
+    donnees = _donnees_reporting(db)
+
+    system = (
+        "Tu es l'assistant reporting du siège de KFSTORE (réseau de boutiques multi-secteurs "
+        "en Guinée). On te fournit des indicateurs réels calculés côté serveur (JSON ci-dessous) "
+        "— n'invente aucun autre chiffre. Réponds en JSON strict avec deux clés : "
+        '"synthese" (chaîne, 3-5 phrases en français, ton factuel de rapport de gestion) et '
+        '"anomalies" (liste d\'objets {"titre": str, "description": str}, une entrée par '
+        "problème notable dans les données — vide si rien à signaler).\n\n"
+        f"Indicateurs :\n{json.dumps(donnees, ensure_ascii=False)}"
+    )
+    brut = get_ia_provider().repondre(system, [{"role": "user", "content": "Génère le rapport."}], json_mode=True)
+    try:
+        parsed = json.loads(brut)
+        return ReportingIntelligent(
+            synthese=parsed["synthese"],
+            anomalies=[AnomalieReporting(id=f"an-{i}", **a) for i, a in enumerate(parsed.get("anomalies", []))],
+        )
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        logger.warning("Réponse LLM reporting invalide, repli sur la synthèse déterministe : %s", exc)
+        return _synthese_repli(donnees)
+
+
+# --- Chatbot service client (§4.4) ------------------------------------------------------
+# Le chat réel côté client (contexte de son propre compte) est exposé publiquement pour
+# l'appli mobile client via app/routers/mon_assistant.py (POST /api/v1/mon-assistant/message,
+# authentification client) — ce fichier reste staff-only. Ici : configuration (toggle réel,
+# stocké dans parametres_application comme mode_hors_ligne) et un testeur interactif pour
+# que le siège puisse vérifier le comportement de l'assistant sans compte client réel.
+
+CHATBOT_CONFIG_ROADMAP = {
+    # Non encore implémenté — indicateurs de roadmap affichés tels quels dans la configuration,
+    # à ne pas confondre avec chatbot_actif (seul toggle réellement piloté aujourd'hui).
+    "suivi_commande_automatique": True,
+    "relance_echeances_dette": False,
+    "escalade_operateur_humain": True,
+    "reponses_langue_locale_test": False,
+}
+
+CLIENT_TEST_CONTEXTE = (
+    "Client de test : Fatoumata Diallo (+224620000000).\n"
+    "Crédit autorisé : oui. Solde de dette actuel : 210 000 GNF.\n"
+    "5 dernières commandes :\n"
+    "- Commande #CMD-1042 : statut en_preparation, 340 000 GNF, passée le " + date.today().isoformat()
+)
 
 
 @router.get("/chatbot/config")
@@ -319,13 +460,38 @@ def chatbot_config(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> dict:
     require_permission(db, current_user, MODULES_IA)
-    return CHATBOT_CONFIG
+    toggle = db.get(ParametreApplicationDB, "chatbot_actif")
+    return {"chatbot_actif": toggle.actif if toggle else False, **CHATBOT_CONFIG_ROADMAP}
 
 
-@router.get("/chatbot/conversation-demo", response_model=list[ConversationMessage])
-def chatbot_conversation_demo(
+class MessageTesterRequest(BaseModel):
+    message: str
+    historique: list[dict] = []
+
+
+class MessageTesterResponse(BaseModel):
+    reponse: str
+
+
+@router.post("/chatbot/tester", response_model=MessageTesterResponse)
+def chatbot_tester(
+    payload: MessageTesterRequest,
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
-) -> list[ConversationMessage]:
+) -> MessageTesterResponse:
+    """Permet au siège de tester le comportement réel de l'assistant (même IaProvider que
+    l'appli client) avec un contexte de compte fictif, sans avoir besoin d'un jeton client."""
     require_permission(db, current_user, MODULES_IA)
-    return CHATBOT_CONVERSATION_DEMO
+    if not payload.message.strip():
+        return MessageTesterResponse(reponse="")
+    system = (
+        "Tu es l'assistant service client de KFSTORE. Réponds en français, brièvement (2-4 "
+        "phrases). N'utilise que les informations du contexte fourni, n'invente jamais de "
+        "donnée absente.\n\nContexte du compte client (données de test) :\n" + CLIENT_TEST_CONTEXTE
+    )
+    messages = [
+        {"role": "user" if m.get("auteur") == "client" else "assistant", "content": m.get("texte", "")}
+        for m in payload.historique[-10:]
+    ]
+    messages.append({"role": "user", "content": payload.message})
+    return MessageTesterResponse(reponse=get_ia_provider().repondre(system, messages))

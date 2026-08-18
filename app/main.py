@@ -31,6 +31,7 @@ from app.routers import (
     ia,
     livraisons,
     mes_commandes,
+    mon_assistant,
     mon_credit,
     notifications,
     parametres,
@@ -69,6 +70,7 @@ app.include_router(client_auth.router)
 app.include_router(catalogue.router)
 app.include_router(mes_commandes.router)
 app.include_router(mon_credit.router)
+app.include_router(mon_assistant.router)
 app.include_router(reseau.router)
 app.include_router(utilisateurs.router)
 app.include_router(roles.router)

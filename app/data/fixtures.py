@@ -1,7 +1,6 @@
 from datetime import date, datetime
 
 from app.models.schemas import (
-    AnomalieReporting,
     Boutique,
     Caisse,
     Client,
@@ -299,38 +298,6 @@ SUGGESTIONS_REAPPRO: list[SuggestionReapprovisionnement] = [
     SuggestionReapprovisionnement(produit_id="robe-wax", boutique_id="lansanaya", stock_actuel=18, ventes_prevues_14j=30, quantite_suggeree=15),
     SuggestionReapprovisionnement(produit_id="ventilateur", boutique_id="matam", stock_actuel=6, ventes_prevues_14j=9, quantite_suggeree=6),
     SuggestionReapprovisionnement(produit_id="televiseur", boutique_id="kaloum", stock_actuel=2, ventes_prevues_14j=5, quantite_suggeree=4),
-]
-
-SYNTHESE_REPORTING = (
-    "Le réseau a réalisé 412,6 M GNF de chiffre d'affaires cette semaine, en hausse de 6 % par rapport "
-    "à la semaine précédente, portée par Madina et Lansanaya. La boutique Kankan reste en marge négative "
-    "pour le second mois consécutif, principalement du fait de charges de loyer élevées rapportées à son "
-    "volume de ventes. Le taux de recouvrement des créances clients s'établit à 78 %, stable. Le secteur "
-    "habillement enregistre la meilleure progression (+12 %), tiré par les robes wax à Lansanaya."
-)
-
-ANOMALIES_REPORTING: list[AnomalieReporting] = [
-    AnomalieReporting(id="an-1", titre="Marge négative persistante — Kankan", description="Deuxième mois consécutif sous le seuil de rentabilité, à surveiller par le siège."),
-    AnomalieReporting(id="an-2", titre="Pic d'écarts de caisse — réseau", description="3 écarts de caisse signalés cette semaine contre une moyenne de 0,5."),
-    AnomalieReporting(id="an-3", titre="Rupture récurrente — Riz local 25kg", description="Troisième semaine consécutive sous le seuil d'alerte à Madina."),
-    AnomalieReporting(id="an-4", titre="Hausse inhabituelle des retours", description="Habillement, boutique Kaloum : retours en hausse de 40 % vs moyenne."),
-]
-
-CHATBOT_CONFIG = {
-    "chatbot_actif": True,
-    "suivi_commande_automatique": True,
-    "relance_echeances_dette": True,
-    "escalade_operateur_humain": True,
-    "reponses_langue_locale_test": False,
-}
-
-CHATBOT_CONVERSATION_DEMO: list[dict] = [
-    {"auteur": "client", "texte": "Bonjour, où en est ma commande #CMD-1042 ?"},
-    {"auteur": "bot", "texte": "Votre commande est en préparation à la boutique Lansanaya. Livraison estimée aujourd'hui avant 18h."},
-    {"auteur": "client", "texte": "Merci. Je peux aussi rembourser ma dette depuis ici ?"},
-    {"auteur": "bot", "texte": "Oui, votre solde est de 210 000 GNF. Voulez-vous initier un remboursement ? Il sera validé par votre boutique."},
-    {"auteur": "client", "texte": "Oui, 100 000 GNF pour commencer."},
-    {"auteur": "bot", "texte": "Demande transmise à la boutique Madina pour validation. Vous recevrez une confirmation."},
 ]
 
 # --- Sécurité & audit ---------------------------------------------------------------

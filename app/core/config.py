@@ -22,5 +22,12 @@ class Settings(BaseSettings):
     sms_api_secret: str = ""
     sms_sender_id: str = "KFSTORE"
 
+    # Fournisseur LLM pour le chatbot service client et le reporting intelligent (CDC §4.4/§4.7,
+    # §6.2). Tant que OPENAI_API_KEY est vide, app/services/ia_provider.py bascule sur un
+    # fournisseur de repli qui répond honnêtement que l'assistant n'est pas configuré, plutôt
+    # que d'échouer — même logique que sms_provider/ConsoleSmsProvider.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
 
 settings = Settings()
