@@ -11,9 +11,12 @@ from app.core.config import settings
 
 logger = logging.getLogger("kfstore.ia")
 
-MESSAGE_NON_CONFIGURE = (
-    "L'assistant IA n'est pas encore configuré côté serveur (aucune clé fournisseur LLM "
-    "renseignée). Contactez le support KFSTORE pour cette demande."
+# Message générique côté client, quelle que soit la cause réelle (clé absente, invalide,
+# quota dépassé, panne réseau...) — la raison précise ne doit jamais fuiter vers l'utilisateur
+# final, elle reste dans les logs serveur (logger.error ci-dessous) pour le diagnostic.
+MESSAGE_INDISPONIBLE = (
+    "Désolé, je ne suis pas en mesure de répondre pour le moment. Réessayez dans quelques "
+    "instants ou contactez votre boutique."
 )
 
 
@@ -32,7 +35,7 @@ class FixtureIaProvider(IaProvider):
 
     def repondre(self, system: str, messages: list[dict[str, str]], json_mode: bool = False) -> str:
         logger.info("[IA:fixture] clé OpenAI absente — réponse de repli renvoyée")
-        return MESSAGE_NON_CONFIGURE
+        return MESSAGE_INDISPONIBLE
 
 
 class OpenAiIaProvider(IaProvider):
@@ -55,7 +58,7 @@ class OpenAiIaProvider(IaProvider):
             return response.choices[0].message.content or ""
         except Exception as exc:  # erreurs réseau/API/quota du SDK, non typées finement
             logger.error("Échec appel OpenAI : %s", exc)
-            return MESSAGE_NON_CONFIGURE
+            return MESSAGE_INDISPONIBLE
 
 
 def get_ia_provider() -> IaProvider:
