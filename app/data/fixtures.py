@@ -10,6 +10,7 @@ from app.models.schemas import (
     EcartInventaire,
     Fournisseur,
     LigneCommandeFournisseur,
+    LigneTransfertStock,
     Livraison,
     MotifMouvementStock,
     MouvementCaisse,
@@ -179,12 +180,12 @@ STOCKS: list[StockBoutique] = [
 ]
 
 MOUVEMENTS_STOCK: list[MouvementStock] = [
-    MouvementStock(id="mv-1", horodatage=datetime(2026, 8, 8, 9, 14), produit_id="riz-local", boutique_id="madina", motif=MotifMouvementStock.vente_caisse, operateur="I. Sow", quantite=-2),
-    MouvementStock(id="mv-2", horodatage=datetime(2026, 8, 8, 8, 40), produit_id="robe-wax", boutique_id="lansanaya", motif=MotifMouvementStock.transfert_entrant, operateur="F. Bah", quantite=12),
-    MouvementStock(id="mv-3", horodatage=datetime(2026, 8, 7, 17, 20), produit_id="ventilateur", boutique_id="matam", motif=MotifMouvementStock.achat_reception_fournisseur, operateur="A. Camara", quantite=10),
-    MouvementStock(id="mv-4", horodatage=datetime(2026, 8, 7, 15, 5), produit_id="sucre-poudre", boutique_id="kankan", motif=MotifMouvementStock.casse_perte, operateur="M. Diallo", quantite=-3),
-    MouvementStock(id="mv-5", horodatage=datetime(2026, 8, 6, 11, 30), produit_id="televiseur", boutique_id="kaloum", motif=MotifMouvementStock.correction_inventaire, operateur="A. Diané", quantite=-1),
-    MouvementStock(id="mv-6", horodatage=datetime(2026, 8, 5, 9, 0), produit_id="huile-vegetale", boutique_id="kankan", motif=MotifMouvementStock.peremption, operateur="M. Diallo", quantite=-4),
+    MouvementStock(id="mv-1", horodatage=datetime(2026, 8, 8, 9, 14), produit_id="riz-local", boutique_id="madina", motif=MotifMouvementStock.vente_caisse, operateur="I. Sow", quantite=-2, stock_avant=10, stock_apres=8),
+    MouvementStock(id="mv-2", horodatage=datetime(2026, 8, 8, 8, 40), produit_id="robe-wax", boutique_id="lansanaya", motif=MotifMouvementStock.transfert_entrant, operateur="F. Bah", quantite=12, stock_avant=6, stock_apres=18),
+    MouvementStock(id="mv-3", horodatage=datetime(2026, 8, 7, 17, 20), produit_id="ventilateur", boutique_id="matam", motif=MotifMouvementStock.achat_reception_fournisseur, operateur="A. Camara", quantite=10, stock_avant=5, stock_apres=15),
+    MouvementStock(id="mv-4", horodatage=datetime(2026, 8, 7, 15, 5), produit_id="sucre-poudre", boutique_id="kankan", motif=MotifMouvementStock.casse_perte, operateur="M. Diallo", quantite=-3, stock_avant=65, stock_apres=62),
+    MouvementStock(id="mv-5", horodatage=datetime(2026, 8, 6, 11, 30), produit_id="televiseur", boutique_id="kaloum", motif=MotifMouvementStock.correction_inventaire, operateur="A. Diané", quantite=-1, stock_avant=3, stock_apres=2),
+    MouvementStock(id="mv-6", horodatage=datetime(2026, 8, 5, 9, 0), produit_id="huile-vegetale", boutique_id="kankan", motif=MotifMouvementStock.peremption, operateur="M. Diallo", quantite=-4, stock_avant=20, stock_apres=16),
 ]
 
 ECARTS_INVENTAIRE: list[EcartInventaire] = [
@@ -203,12 +204,12 @@ CAISSES: list[Caisse] = [
 ]
 
 MOUVEMENTS_CAISSE: list[MouvementCaisse] = [
-    MouvementCaisse(id="mc-1", horodatage=datetime(2026, 8, 8, 9, 14), boutique_id="lansanaya", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="F. Bah", montant=185000),
-    MouvementCaisse(id="mc-2", horodatage=datetime(2026, 8, 8, 10, 2), boutique_id="madina", caisse_libelle="Principale", type=TypeMouvementCaisse.decaissement, motif="Dépense — transport", operateur="I. Sow", montant=-60000),
-    MouvementCaisse(id="mc-3", horodatage=datetime(2026, 8, 8, 10, 45), boutique_id="kankan", caisse_libelle="Secondaire", type=TypeMouvementCaisse.encaissement, motif="Remboursement dette", operateur="M. Diallo", montant=120000),
-    MouvementCaisse(id="mc-4", horodatage=datetime(2026, 8, 8, 11, 20), boutique_id="matam", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="A. Camara", montant=340000),
-    MouvementCaisse(id="mc-5", horodatage=datetime(2026, 8, 8, 12, 5), boutique_id="lansanaya", caisse_libelle="Principale", type=TypeMouvementCaisse.decaissement, motif="Retrait fond de caisse", operateur="F. Bah", montant=-100000),
-    MouvementCaisse(id="mc-6", horodatage=datetime(2026, 8, 8, 13, 30), boutique_id="madina", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="I. Sow", montant=275000),
+    MouvementCaisse(id="mc-1", horodatage=datetime(2026, 8, 8, 9, 14), boutique_id="lansanaya", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="F. Bah", montant=185000, solde_avant=1955000, solde_apres=2140000),
+    MouvementCaisse(id="mc-2", horodatage=datetime(2026, 8, 8, 10, 2), boutique_id="madina", caisse_libelle="Principale", type=TypeMouvementCaisse.decaissement, motif="Dépense — transport", operateur="I. Sow", montant=-60000, solde_avant=3680000, solde_apres=3620000),
+    MouvementCaisse(id="mc-3", horodatage=datetime(2026, 8, 8, 10, 45), boutique_id="kankan", caisse_libelle="Secondaire", type=TypeMouvementCaisse.encaissement, motif="Remboursement dette", operateur="M. Diallo", montant=120000, solde_avant=860000, solde_apres=980000),
+    MouvementCaisse(id="mc-4", horodatage=datetime(2026, 8, 8, 11, 20), boutique_id="matam", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="A. Camara", montant=340000, solde_avant=1070000, solde_apres=1410000),
+    MouvementCaisse(id="mc-5", horodatage=datetime(2026, 8, 8, 12, 5), boutique_id="lansanaya", caisse_libelle="Principale", type=TypeMouvementCaisse.decaissement, motif="Retrait fond de caisse", operateur="F. Bah", montant=-100000, solde_avant=2240000, solde_apres=2140000),
+    MouvementCaisse(id="mc-6", horodatage=datetime(2026, 8, 8, 13, 30), boutique_id="madina", caisse_libelle="Principale", type=TypeMouvementCaisse.encaissement, motif="Vente en caisse", operateur="I. Sow", montant=275000, solde_avant=3345000, solde_apres=3620000),
 ]
 
 # --- Commandes ----------------------------------------------------------------
@@ -273,12 +274,36 @@ REMBOURSEMENTS: list[Remboursement] = [
 # --- Transferts de stock -----------------------------------------------------------
 
 TRANSFERTS: list[TransfertStock] = [
-    TransfertStock(id="TR-201", produit_id="riz-local", boutique_source_id="lansanaya", boutique_destination_id="madina", quantite=40, demandeur="I. Sow (gérant)", statut=StatutTransfert.en_transit),
-    TransfertStock(id="TR-202", produit_id="ventilateur", boutique_source_id="matam", boutique_destination_id="kaloum", quantite=5, demandeur="Siège", statut=StatutTransfert.valide),
-    TransfertStock(id="TR-203", produit_id="robe-wax", boutique_source_id="kaloum", boutique_destination_id="lansanaya", quantite=12, demandeur="F. Bah (gérante)", statut=StatutTransfert.recu),
-    TransfertStock(id="TR-204", produit_id="huile-vegetale", boutique_source_id="madina", boutique_destination_id="kankan", quantite=30, demandeur="M. Diallo (gérante)", statut=StatutTransfert.demande),
-    TransfertStock(id="TR-205", produit_id="televiseur", boutique_source_id="matam", boutique_destination_id="lansanaya", quantite=2, demandeur="Siège", statut=StatutTransfert.en_transit),
-    TransfertStock(id="TR-206", produit_id="sucre-poudre", boutique_source_id="lansanaya", boutique_destination_id="kaloum", quantite=50, demandeur="A. Camara (gérant)", statut=StatutTransfert.recu),
+    TransfertStock(
+        id="TR-201", boutique_source_id="lansanaya", boutique_destination_id="madina",
+        demandeur="I. Sow (gérant)", statut=StatutTransfert.en_transit,
+        lignes=[LigneTransfertStock(id="TR-201-1", produit_id="riz-local", produit_nom="Riz local", quantite=40)],
+    ),
+    TransfertStock(
+        id="TR-202", boutique_source_id="matam", boutique_destination_id="kaloum",
+        demandeur="Siège", statut=StatutTransfert.valide,
+        lignes=[LigneTransfertStock(id="TR-202-1", produit_id="ventilateur", produit_nom="Ventilateur", quantite=5)],
+    ),
+    TransfertStock(
+        id="TR-203", boutique_source_id="kaloum", boutique_destination_id="lansanaya",
+        demandeur="F. Bah (gérante)", statut=StatutTransfert.recu,
+        lignes=[LigneTransfertStock(id="TR-203-1", produit_id="robe-wax", produit_nom="Robe wax", quantite=12, quantite_recue=12)],
+    ),
+    TransfertStock(
+        id="TR-204", boutique_source_id="madina", boutique_destination_id="kankan",
+        demandeur="M. Diallo (gérante)", statut=StatutTransfert.demande,
+        lignes=[LigneTransfertStock(id="TR-204-1", produit_id="huile-vegetale", produit_nom="Huile végétale", quantite=30)],
+    ),
+    TransfertStock(
+        id="TR-205", boutique_source_id="matam", boutique_destination_id="lansanaya",
+        demandeur="Siège", statut=StatutTransfert.en_transit,
+        lignes=[LigneTransfertStock(id="TR-205-1", produit_id="televiseur", produit_nom="Téléviseur", quantite=2)],
+    ),
+    TransfertStock(
+        id="TR-206", boutique_source_id="lansanaya", boutique_destination_id="kaloum",
+        demandeur="A. Camara (gérant)", statut=StatutTransfert.recu,
+        lignes=[LigneTransfertStock(id="TR-206-1", produit_id="sucre-poudre", produit_nom="Sucre en poudre", quantite=50, quantite_recue=50)],
+    ),
 ]
 
 # --- Promotions & tarifs ------------------------------------------------------------

@@ -14,7 +14,7 @@ from app.db_models.models import (
     ProduitDB,
     UtilisateurDB,
 )
-from app.services.fiscalite import TAUX_TVA, ventilation_tva
+from app.services.fiscalite import get_parametre_fiscal, ventilation_tva
 from app.services.pdf import articles_table, document_shell, render_pdf, totals_block
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
@@ -44,6 +44,16 @@ def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
     )
 
 
+def _lignes_tva(db: Session, montant_ttc: float, libelle_ht: str = "Total HT") -> list[tuple[str, str]]:
+    """Ventilation HT/TVA à insérer dans un bloc de totaux — vide si la TVA est désactivée
+    dans les paramètres, auquel cas le document n'affiche que le montant TTC."""
+    parametre = get_parametre_fiscal(db)
+    if not parametre.actif:
+        return []
+    montant_ht, montant_tva = ventilation_tva(montant_ttc, parametre.taux)
+    return [(libelle_ht, _gnf(montant_ht)), (f"TVA ({int(parametre.taux * 100)} %)", _gnf(montant_tva))]
+
+
 @router.get("/commandes-fournisseurs/{commande_id}/bon-commande.pdf")
 def bon_commande_pdf(
     commande_id: str,
@@ -68,9 +78,8 @@ def bon_commande_pdf(
         for l in c.lignes
     ]
 
-    montant_ht, montant_tva = ventilation_tva(c.montant)
     body = articles_table(rows) + totals_block(
-        [("Total HT", _gnf(montant_ht)), (f"TVA ({int(TAUX_TVA * 100)} %)", _gnf(montant_tva))],
+        _lignes_tva(db, c.montant),
         "Montant total de la commande (TTC)", _gnf(c.montant),
     )
 
@@ -123,14 +132,9 @@ def bon_reception_pdf(
         for l in c.lignes
     ]
     valeur_recue = sum(l.quantite_recue * l.prix_unitaire for l in c.lignes)
-    montant_ht, montant_tva = ventilation_tva(valeur_recue)
 
     body = articles_table(rows, montant_col_label="Valeur reçue", extra_col="Quantité reçue") + totals_block(
-        [
-            ("Montant total commandé", _gnf(c.montant)),
-            ("Total HT reçu", _gnf(montant_ht)),
-            (f"TVA ({int(TAUX_TVA * 100)} %)", _gnf(montant_tva)),
-        ],
+        [("Montant total commandé", _gnf(c.montant))] + _lignes_tva(db, valeur_recue, libelle_ht="Total HT reçu"),
         "Valeur totale reçue à ce jour (TTC)", _gnf(valeur_recue),
     )
 
@@ -188,9 +192,8 @@ def generer_facture_pdf(db: Session, c: CommandeClientDB) -> Response:
         for l in c.lignes
     ]
 
-    montant_ht, montant_tva = ventilation_tva(c.montant)
     body = articles_table(rows) + totals_block(
-        [("Total HT", _gnf(montant_ht)), (f"TVA ({int(TAUX_TVA * 100)} %)", _gnf(montant_tva))],
+        _lignes_tva(db, c.montant),
         "Montant total à payer (TTC)", _gnf(c.montant),
     )
 
@@ -229,7 +232,10 @@ def recu_pdf(
     assert_boutique_access(current_user, p.boutique_id)
     boutique = db.get(BoutiqueDB, p.boutique_id)
 
-    montant_ht, montant_tva = ventilation_tva(p.montant)
+    lignes_tva_html = "".join(
+        f'<tr><td>Dont {label}</td><td class="num">{valeur}</td></tr>'
+        for label, valeur in _lignes_tva(db, p.montant, libelle_ht="total HT")
+    )
     body = f"""
     <div style="margin: 30px 0; padding: 24px; background: #f0fdfa; border-radius: 8px; text-align: center;">
       <div style="font-size: 9pt; text-transform: uppercase; letter-spacing: 0.08em; color: #0f766e;">Montant reçu (TTC)</div>
@@ -241,8 +247,7 @@ def recu_pdf(
         <tr><td>Mode de paiement</td><td class="num">{p.mode_paiement.value.replace('_', ' ').title()}</td></tr>
         <tr><td>Date</td><td class="num">{p.date.strftime('%d/%m/%Y')}</td></tr>
         <tr><td>Statut</td><td class="num">{STATUT_PAIEMENT_LABELS.get(p.statut, str(p.statut))}</td></tr>
-        <tr><td>Dont total HT</td><td class="num">{_gnf(montant_ht)}</td></tr>
-        <tr><td>Dont TVA ({int(TAUX_TVA * 100)} %)</td><td class="num">{_gnf(montant_tva)}</td></tr>
+        {lignes_tva_html}
       </tbody>
     </table>
     """

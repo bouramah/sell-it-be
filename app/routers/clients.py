@@ -22,7 +22,17 @@ from app.db_models.models import (
     PaiementFournisseurDB,
     UtilisateurDB,
 )
-from app.models.schemas import Client, PaiementClient, PaiementFournisseur, StatutCaisse, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.schemas import (
+    Client,
+    PaiementClient,
+    PaiementFournisseur,
+    StatutCaisse,
+    StatutCommandeClient,
+    StatutPaiement,
+    TiersType,
+    TopClient,
+    TypeMouvementCaisse,
+)
 from app.models.write_schemas import ClientCreate, ClientUpdate, PaiementCaisseInput, PaiementClientCreate, PaiementFournisseurCreate
 
 router = APIRouter(prefix="/api/v1", tags=["clients"])
@@ -84,6 +94,40 @@ def list_clients(
     elif not a_portee_reseau(current_user):
         query = query.filter(ClientDB.boutiques.any(BoutiqueDB.id.in_(boutiques_autorisees(current_user))))
     return [_to_schema(c, db) for c in query.all()]
+
+
+@router.get("/clients/top", response_model=list[TopClient])
+def top_clients(
+    boutique_id: str | None = None,
+    limite: int = 10,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[TopClient]:
+    """Classement des clients par chiffre d'affaires — pour le tableau de bord comparatif
+    clients (CDC demande client). Ne compte que les clients enregistrés (client_id renseigné) ;
+    les ventes à un client de passage sans fiche ne sont pas attribuables à un client précis."""
+    query = db.query(CommandeClientDB).filter(
+        CommandeClientDB.statut != StatutCommandeClient.annulee,
+        CommandeClientDB.client_id.isnot(None),
+    )
+    if boutique_id:
+        assert_boutique_access(current_user, boutique_id)
+        query = query.filter(CommandeClientDB.boutique_id == boutique_id)
+    elif not a_portee_reseau(current_user):
+        query = query.filter(CommandeClientDB.boutique_id.in_(boutiques_autorisees(current_user)))
+    commandes = query.all()
+
+    agrege: dict[str, dict] = {}
+    for c in commandes:
+        entry = agrege.setdefault(c.client_id, {"nom": c.client_nom, "ca": 0.0, "nb": 0})
+        entry["ca"] += c.montant
+        entry["nb"] += 1
+
+    classement = sorted(agrege.items(), key=lambda kv: kv[1]["ca"], reverse=True)[:limite]
+    return [
+        TopClient(client_id=cid, client_nom=entry["nom"], chiffre_affaires=entry["ca"], nombre_commandes=entry["nb"])
+        for cid, entry in classement
+    ]
 
 
 @router.post("/clients", response_model=Client, status_code=201)

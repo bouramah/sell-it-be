@@ -8,10 +8,11 @@ from app.core.database import get_db
 from app.core.module_actions import REFERENTIELS_GESTION, SECURITE_GESTION
 from app.core.security import get_current_user
 from app.data.fixtures import REFERENTIELS
-from app.db_models.models import ParametreApplicationDB, ReferentielDB, UtilisateurDB
-from app.models.schemas import ParametreApplication, ReferentielItem
-from app.models.write_schemas import ParametreApplicationUpdate, ReferentielCreate, ReferentielUpdate
+from app.db_models.models import ParametreApplicationDB, ParametreFiscalDB, ReferentielDB, UtilisateurDB
+from app.models.schemas import ParametreApplication, ParametreFiscal, ReferentielItem
+from app.models.write_schemas import ParametreApplicationUpdate, ParametreFiscalUpdate, ReferentielCreate, ReferentielUpdate
 from app.services.audit import log_audit
+from app.services.fiscalite import get_parametre_fiscal
 
 router = APIRouter(prefix="/api/v1/parametres", tags=["parametres"])
 
@@ -42,6 +43,36 @@ def modifier_parametre_application(
     p.updated_by = f"{current_user.prenom} {current_user.nom}"
     log_audit(
         db, f"Paramètre application { 'activé' if payload.actif else 'désactivé' } — {p.label}",
+        f"{current_user.prenom} {current_user.nom}",
+    )
+    db.commit()
+    db.refresh(p)
+    return p
+
+
+@router.get("/fiscal", response_model=ParametreFiscal)
+def get_parametre_fiscal_route(
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> ParametreFiscalDB:
+    # Lecture ouverte à tout utilisateur authentifié — les documents commerciaux (facture, reçu,
+    # bons de commande/réception) doivent pouvoir vérifier la ventilation TVA quel que soit le rôle.
+    return get_parametre_fiscal(db)
+
+
+@router.put("/fiscal", response_model=ParametreFiscal)
+def modifier_parametre_fiscal(
+    payload: ParametreFiscalUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> ParametreFiscalDB:
+    require_permission(db, current_user, SECURITE_GESTION)
+    p = get_parametre_fiscal(db)
+    p.taux = payload.taux
+    p.actif = payload.actif
+    p.updated_by = f"{current_user.prenom} {current_user.nom}"
+    log_audit(
+        db, f"Paramètre TVA modifié — taux {int(payload.taux * 100)} %, { 'appliquée' if payload.actif else 'désactivée' }",
         f"{current_user.prenom} {current_user.nom}",
     )
     db.commit()

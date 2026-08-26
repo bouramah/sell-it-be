@@ -1,6 +1,6 @@
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.schemas import (
     CanalCommande,
@@ -313,20 +313,31 @@ class RemboursementCreate(BaseModel):
     operateur: str
 
 
-class TransfertCreate(BaseModel):
+class LigneTransfertInput(BaseModel):
     produit_id: str
+    quantite: int
+
+
+class TransfertCreate(BaseModel):
     boutique_source_id: str
     boutique_destination_id: str
-    quantite: int
     demandeur: str
+    lignes: list[LigneTransfertInput]
+
+
+class LigneReceptionInput(BaseModel):
+    produit_id: str
+    # Si absent pour une ligne, on suppose que tout est arrivé (quantite_recue = quantite demandée).
+    # motif_ecart obligatoire si quantite_recue < quantite pour cette ligne.
+    quantite_recue: int | None = None
+    motif_ecart: str | None = None
 
 
 class TransfertStatutUpdate(BaseModel):
     statut: StatutTransfert
-    # Utilisé seulement pour statut='recu' — si absent, on suppose que tout est arrivé
-    # (quantite_recue = quantite demandée). motif_ecart obligatoire si quantite_recue < quantite.
-    quantite_recue: int | None = None
-    motif_ecart: str | None = None
+    # Utilisé seulement pour statut='recu' — si absent, toutes les lignes sont considérées
+    # intégralement reçues.
+    lignes: list[LigneReceptionInput] | None = None
 
 
 class LivraisonCreate(BaseModel):
@@ -416,6 +427,11 @@ class ParametreSecuriteUpdate(BaseModel):
 
 
 class ParametreApplicationUpdate(BaseModel):
+    actif: bool
+
+
+class ParametreFiscalUpdate(BaseModel):
+    taux: float = Field(ge=0, le=1)
     actif: bool
 
 

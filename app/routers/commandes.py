@@ -87,6 +87,7 @@ def appliquer_livraison_stock(
     now = datetime.now(timezone.utc)
     for l in c.lignes:
         stock = db.get(StockBoutiqueDB, (c.boutique_id, l.produit_id))
+        stock_avant = stock.quantite_disponible if stock else 0
         if stock:
             stock.quantite_disponible -= l.quantite
             if etait_reservee:
@@ -111,6 +112,7 @@ def appliquer_livraison_stock(
             id=str(uuid.uuid4())[:8], horodatage=now, produit_id=l.produit_id, boutique_id=c.boutique_id,
             motif=MotifMouvementStock.commande_client,
             operateur=operateur, quantite=-l.quantite,
+            stock_avant=stock_avant, stock_apres=stock.quantite_disponible if stock else stock_avant - l.quantite,
         ))
 
 
@@ -493,6 +495,7 @@ def receptionner_commande_fournisseur(
         ligne.quantite_recue += r.quantite
 
         stock = db.get(StockBoutiqueDB, (c.boutique_id, r.produit_id))
+        stock_avant = stock.quantite_disponible if stock else 0
         if stock:
             stock.quantite_disponible += r.quantite
             stock.derniere_mouvement = now
@@ -504,6 +507,7 @@ def receptionner_commande_fournisseur(
         db.add(MouvementStockDB(
             id=str(uuid.uuid4())[:8], horodatage=now, produit_id=r.produit_id, boutique_id=c.boutique_id,
             motif=MotifMouvementStock.achat_reception_fournisseur, operateur=payload.operateur, quantite=r.quantite,
+            stock_avant=stock_avant, stock_apres=stock_avant + r.quantite,
         ))
 
     complet = all(l.quantite_recue >= l.quantite for l in c.lignes)
@@ -563,17 +567,20 @@ def corriger_reception_commande_fournisseur(
         ligne.quantite_recue = r.quantite_recue
 
         stock = db.get(StockBoutiqueDB, (c.boutique_id, r.produit_id))
+        stock_avant = stock.quantite_disponible if stock else 0
+        stock_apres = max(stock_avant + delta, 0)
         if stock:
-            stock.quantite_disponible = max(stock.quantite_disponible + delta, 0)
+            stock.quantite_disponible = stock_apres
             stock.derniere_mouvement = now
         elif delta > 0:
             db.add(StockBoutiqueDB(
                 boutique_id=c.boutique_id, produit_id=r.produit_id,
-                quantite_disponible=max(delta, 0), quantite_reservee=0, seuil_alerte=0, derniere_mouvement=now,
+                quantite_disponible=stock_apres, quantite_reservee=0, seuil_alerte=0, derniere_mouvement=now,
             ))
         db.add(MouvementStockDB(
             id=str(uuid.uuid4())[:8], horodatage=now, produit_id=r.produit_id, boutique_id=c.boutique_id,
             motif=MotifMouvementStock.correction_inventaire, operateur=payload.operateur, quantite=delta,
+            stock_avant=stock_avant, stock_apres=stock_apres,
         ))
 
     if all(l.quantite_recue >= l.quantite for l in c.lignes):

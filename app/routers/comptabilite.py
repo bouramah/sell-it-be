@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from app.db_models.models import (
     CommandeFournisseurDB,
     DepenseDB,
     DetteDB,
+    LigneCommandeClientDB,
     PrixAchatDB,
     ProduitDB,
     RemboursementDB,
@@ -25,7 +26,9 @@ from app.models.schemas import (
     CompteResultatBoutique,
     EcritureComptable,
     EtatStockValorise,
+    LigneMargeProduit,
     LigneStockValorise,
+    MargeProduits,
     PalierPrix,
     StatutCommandeClient,
     StatutCommandeFournisseur,
@@ -203,6 +206,90 @@ def etat_stock_valorise(
     que d'inventer une valeur, pour ne jamais surestimer la valeur du stock."""
     require_permission(db, current_user, COMPTABILITE_BOUTIQUE, COMPTABILITE_RESEAU)
     return _calculer_stock_valorise(db, current_user, boutique_id)
+
+
+def _calculer_marge_produits(
+    db: Session, current_user: UtilisateurDB, debut: datetime, fin: datetime,
+    boutique_id: str | None, produit_id: str | None,
+) -> MargeProduits:
+    """Bénéfice par produit sur une période libre — coût unitaire résolu au même titre que
+    l'état des stocks valorisés (moyenne des prix d'achat fournisseurs actifs à la date de la
+    vente, pour le palier réellement vendu) : un produit sans prix d'achat renseigné n'est pas
+    valorisable, sa marge apparaît à None plutôt que d'inventer un coût."""
+    commandes_q = apply_boutique_filter(
+        db.query(CommandeClientDB).filter(
+            CommandeClientDB.statut != StatutCommandeClient.annulee,
+            CommandeClientDB.date_creation >= debut,
+            CommandeClientDB.date_creation <= fin,
+        ),
+        CommandeClientDB.boutique_id, current_user, boutique_id,
+    )
+    commandes = commandes_q.all()
+    if not commandes:
+        return MargeProduits(date_debut=debut, date_fin=fin, boutique_id=boutique_id, chiffre_affaires_total=0, marge_totale=0, lignes=[])
+
+    date_vente_par_commande = {c.id: c.date_creation.date() for c in commandes}
+    commande_ids = list(date_vente_par_commande.keys())
+
+    lignes_q = db.query(LigneCommandeClientDB).filter(LigneCommandeClientDB.commande_id.in_(commande_ids))
+    if produit_id:
+        lignes_q = lignes_q.filter(LigneCommandeClientDB.produit_id == produit_id)
+    lignes = lignes_q.all()
+
+    produit_ids = {l.produit_id for l in lignes}
+    produits_by_id = {p.id: p for p in db.query(ProduitDB).filter(ProduitDB.id.in_(produit_ids)).all()} if produit_ids else {}
+    prix_achats = db.query(PrixAchatDB).filter(PrixAchatDB.produit_id.in_(produit_ids)).all() if produit_ids else []
+
+    def cout_unitaire(pid: str, palier: PalierPrix, a_date: date) -> float | None:
+        couts = [
+            pa.prix for pa in prix_achats
+            if pa.produit_id == pid and pa.palier == palier
+            and pa.date_debut <= a_date and (pa.date_fin is None or pa.date_fin >= a_date)
+        ]
+        return sum(couts) / len(couts) if couts else None
+
+    agrege: dict[str, dict] = {}
+    for l in lignes:
+        entry = agrege.setdefault(l.produit_id, {"quantite": 0, "ca": 0.0, "cout": 0.0, "cout_connu": True})
+        entry["quantite"] += l.quantite
+        entry["ca"] += l.quantite * l.prix_unitaire
+        cout = cout_unitaire(l.produit_id, l.palier, date_vente_par_commande[l.commande_id])
+        if cout is None:
+            entry["cout_connu"] = False
+        else:
+            entry["cout"] += l.quantite * cout
+
+    resultat_lignes = [
+        LigneMargeProduit(
+            produit_id=pid, produit_nom=produits_by_id[pid].nom if pid in produits_by_id else pid,
+            quantite_vendue=entry["quantite"], chiffre_affaires=entry["ca"],
+            cout_total=entry["cout"] if entry["cout_connu"] else None,
+            marge=(entry["ca"] - entry["cout"]) if entry["cout_connu"] else None,
+            marge_pct=round((entry["ca"] - entry["cout"]) / entry["ca"] * 100, 1) if entry["cout_connu"] and entry["ca"] else None,
+        )
+        for pid, entry in sorted(agrege.items(), key=lambda kv: kv[1]["ca"], reverse=True)
+    ]
+    ca_total = sum(l.chiffre_affaires for l in resultat_lignes)
+    marge_connue = [l.marge for l in resultat_lignes if l.marge is not None]
+    marge_totale = sum(marge_connue) if marge_connue else None
+
+    return MargeProduits(
+        date_debut=debut, date_fin=fin, boutique_id=boutique_id,
+        chiffre_affaires_total=ca_total, marge_totale=marge_totale, lignes=resultat_lignes,
+    )
+
+
+@router.get("/marge-produits", response_model=MargeProduits)
+def marge_produits(
+    debut: datetime,
+    fin: datetime,
+    boutique_id: str | None = None,
+    produit_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> MargeProduits:
+    require_permission(db, current_user, COMPTABILITE_BOUTIQUE, COMPTABILITE_RESEAU)
+    return _calculer_marge_produits(db, current_user, debut, fin, boutique_id, produit_id)
 
 
 @router.get("/export.xlsx")

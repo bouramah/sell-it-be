@@ -184,6 +184,13 @@ class Fournisseur(BaseModel):
     secteur_geo_id: str | None = None
 
 
+class TopFournisseur(BaseModel):
+    fournisseur_id: str
+    fournisseur_nom: str
+    montant_achats: float
+    nombre_commandes: int
+
+
 class Utilisateur(BaseModel):
     id: str
     nom: str
@@ -253,6 +260,13 @@ class Client(BaseModel):
     commune: str | None = None
     ville: str | None = None
     secteur_geo_id: str | None = None
+
+
+class TopClient(BaseModel):
+    client_id: str
+    client_nom: str
+    chiffre_affaires: float
+    nombre_commandes: int
 
 
 class PaiementClient(BaseModel):
@@ -351,6 +365,8 @@ class MouvementStock(BaseModel):
     motif: MotifMouvementStock
     operateur: str
     quantite: int  # signé
+    stock_avant: int
+    stock_apres: int
 
 
 class StatutEcartInventaire(str, Enum):
@@ -390,6 +406,8 @@ class MouvementCaisse(BaseModel):
     motif: str
     operateur: str
     montant: float  # signé
+    solde_avant: float
+    solde_apres: float
 
 
 # --- Commandes ----------------------------------------------------------------
@@ -516,16 +534,22 @@ class DemandeCredit(BaseModel):
 
 # --- Transferts de stock -----------------------------------------------------------
 
-class TransfertStock(BaseModel):
+class LigneTransfertStock(BaseModel):
     id: str
     produit_id: str
-    boutique_source_id: str
-    boutique_destination_id: str
+    produit_nom: str
     quantite: int
-    demandeur: str
-    statut: StatutTransfert
     quantite_recue: int | None = None
     motif_ecart: str | None = None
+
+
+class TransfertStock(BaseModel):
+    id: str
+    boutique_source_id: str
+    boutique_destination_id: str
+    demandeur: str
+    statut: StatutTransfert
+    lignes: list[LigneTransfertStock]
 
 
 # --- Comptabilité ------------------------------------------------------------------
@@ -567,6 +591,25 @@ class LigneStockValorise(BaseModel):
 class EtatStockValorise(BaseModel):
     lignes: list[LigneStockValorise]
     valeur_totale: float
+
+
+class LigneMargeProduit(BaseModel):
+    produit_id: str
+    produit_nom: str
+    quantite_vendue: int
+    chiffre_affaires: float
+    cout_total: float | None  # None si aucun prix d'achat renseigné pour ce produit sur la période
+    marge: float | None
+    marge_pct: float | None
+
+
+class MargeProduits(BaseModel):
+    date_debut: datetime
+    date_fin: datetime
+    boutique_id: str | None
+    chiffre_affaires_total: float
+    marge_totale: float | None
+    lignes: list[LigneMargeProduit]
 
 
 # --- Promotions & tarifs ------------------------------------------------------------
@@ -634,6 +677,11 @@ class ParametreSecurite(BaseModel):
 class ParametreApplication(BaseModel):
     id: str
     label: str
+    actif: bool
+
+
+class ParametreFiscal(BaseModel):
+    taux: float
     actif: bool
 
 

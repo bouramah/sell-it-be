@@ -312,6 +312,8 @@ class MouvementStockDB(AuditMixin, Base):
     motif: Mapped[MotifMouvementStock] = mapped_column(Enum(MotifMouvementStock))
     operateur: Mapped[str] = mapped_column(String(120))
     quantite: Mapped[int] = mapped_column(Integer)
+    stock_avant: Mapped[int] = mapped_column(Integer, default=0)
+    stock_apres: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class EcartInventaireDB(AuditMixin, Base):
@@ -350,6 +352,8 @@ class MouvementCaisseDB(AuditMixin, Base):
     motif: Mapped[str] = mapped_column(String(160))
     operateur: Mapped[str] = mapped_column(String(120))
     montant: Mapped[float] = mapped_column(Float)
+    solde_avant: Mapped[float] = mapped_column(Float, default=0)
+    solde_apres: Mapped[float] = mapped_column(Float, default=0)
 
 
 class CommandeClientDB(AuditMixin, Base):
@@ -466,20 +470,33 @@ class DemandeCreditDB(AuditMixin, Base):
 
 
 class TransfertStockDB(AuditMixin, Base):
+    """En-tête d'un transfert — peut porter plusieurs produits (une seule opération, CDC),
+    chacun sur sa propre ligne (même pattern que CommandeClientDB/lignes_commandes_clients)."""
     __tablename__ = "transferts_stock"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
     boutique_source_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
     boutique_destination_id: Mapped[str] = mapped_column(String(40), ForeignKey("boutiques.id"))
-    quantite: Mapped[int] = mapped_column(Integer)
     demandeur: Mapped[str] = mapped_column(String(160))
     statut: Mapped[StatutTransfert] = mapped_column(Enum(StatutTransfert))
+
+    lignes: Mapped[list["LigneTransfertStockDB"]] = relationship(back_populates="transfert", cascade="all, delete-orphan")
+
+
+class LigneTransfertStockDB(AuditMixin, Base):
+    __tablename__ = "lignes_transferts_stock"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    transfert_id: Mapped[str] = mapped_column(String(40), ForeignKey("transferts_stock.id", ondelete="CASCADE"))
+    produit_id: Mapped[str] = mapped_column(String(40), ForeignKey("produits.id"))
+    quantite: Mapped[int] = mapped_column(Integer)
     # Écart à la réception (casse/perte en transit, cf. CDC 3.9) : quantite_recue < quantite
     # signifie qu'une partie ne s'est pas rendue à destination — motif_ecart devient alors
     # obligatoire (contrôlé côté routeur, jamais confiance dans une valeur envoyée sans motif).
     quantite_recue: Mapped[int | None] = mapped_column(Integer, nullable=True)
     motif_ecart: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    transfert: Mapped["TransfertStockDB"] = relationship(back_populates="lignes")
 
 
 class LivraisonDB(AuditMixin, Base):
@@ -620,6 +637,17 @@ class ParametreApplicationDB(AuditMixin, Base):
     label: Mapped[str] = mapped_column(String(200))
     actif: Mapped[bool] = mapped_column(Boolean, default=False)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ParametreFiscalDB(AuditMixin, Base):
+    """Ligne unique (id='tva') — taux et application de la TVA configurables plutôt que codés
+    en dur (app/services/fiscalite.py), pour permettre de désactiver la ventilation HT/TVA sur
+    les documents commerciaux sans toucher au code."""
+    __tablename__ = "parametres_fiscaux"
+
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)
+    taux: Mapped[float] = mapped_column(Float, default=0.18)
+    actif: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class OtpCodeDB(AuditMixin, Base):

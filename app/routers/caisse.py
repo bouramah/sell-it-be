@@ -26,6 +26,8 @@ class LigneMouvementCaisse(BaseModel):
     motif: str
     operateur: str
     montant: float
+    solde_avant: float
+    solde_apres: float
 
 
 @router.get("/caisses", response_model=list[Caisse])
@@ -129,6 +131,8 @@ def list_mouvements_caisse(
             motif=m.motif,
             operateur=m.operateur,
             montant=m.montant,
+            solde_avant=m.solde_avant,
+            solde_apres=m.solde_apres,
         )
         for m in rows
     ]
@@ -151,6 +155,8 @@ def create_mouvement_caisse(
     signed_montant = payload.montant if payload.type == TypeMouvementCaisse.encaissement else -payload.montant
     now = datetime.now(timezone.utc)
     auteur = f"{current_user.prenom} {current_user.nom}"
+    solde_avant = caisse.solde_theorique
+    solde_apres = solde_avant + signed_montant
     m = MouvementCaisseDB(
         id=str(uuid.uuid4())[:8],
         horodatage=now,
@@ -161,11 +167,13 @@ def create_mouvement_caisse(
         motif=payload.motif,
         operateur=payload.operateur,
         montant=signed_montant,
+        solde_avant=solde_avant,
+        solde_apres=solde_apres,
         created_by=auteur,
         updated_by=auteur,
     )
     db.add(m)
-    caisse.solde_theorique += signed_montant
+    caisse.solde_theorique = solde_apres
     caisse.updated_by = auteur
     db.commit()
     return LigneMouvementCaisse(
@@ -177,4 +185,6 @@ def create_mouvement_caisse(
         motif=m.motif,
         operateur=m.operateur,
         montant=m.montant,
+        solde_avant=m.solde_avant,
+        solde_apres=m.solde_apres,
     )

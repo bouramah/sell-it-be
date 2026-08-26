@@ -43,6 +43,8 @@ class LigneMouvementStock(BaseModel):
     motif: MotifMouvementStock
     operateur: str
     quantite: int
+    stock_avant: int
+    stock_apres: int
 
 
 class LigneEcartInventaire(BaseModel):
@@ -211,6 +213,8 @@ def list_mouvements(
             motif=m.motif,
             operateur=m.operateur,
             quantite=m.quantite,
+            stock_avant=m.stock_avant,
+            stock_apres=m.stock_apres,
         )
         for m in rows
     ]
@@ -230,6 +234,11 @@ def create_mouvement(
 
     auteur = f"{current_user.prenom} {current_user.nom}"
     now = datetime.now(timezone.utc)
+
+    ligne = db.get(StockBoutiqueDB, (payload.boutique_id, payload.produit_id))
+    stock_avant = ligne.quantite_disponible if ligne else 0
+    stock_apres = stock_avant + payload.quantite if ligne else max(payload.quantite, 0)
+
     mouvement = MouvementStockDB(
         id=str(uuid.uuid4())[:8],
         horodatage=now,
@@ -238,21 +247,22 @@ def create_mouvement(
         motif=payload.motif,
         operateur=payload.operateur,
         quantite=payload.quantite,
+        stock_avant=stock_avant,
+        stock_apres=stock_apres,
         created_by=auteur,
         updated_by=auteur,
     )
     db.add(mouvement)
 
-    ligne = db.get(StockBoutiqueDB, (payload.boutique_id, payload.produit_id))
     if ligne:
-        ligne.quantite_disponible += payload.quantite
+        ligne.quantite_disponible = stock_apres
         ligne.derniere_mouvement = now
         ligne.updated_by = auteur
     else:
         ligne = StockBoutiqueDB(
             boutique_id=payload.boutique_id,
             produit_id=payload.produit_id,
-            quantite_disponible=max(payload.quantite, 0),
+            quantite_disponible=stock_apres,
             quantite_reservee=0,
             seuil_alerte=0,
             derniere_mouvement=now,
@@ -275,6 +285,8 @@ def create_mouvement(
         motif=mouvement.motif,
         operateur=mouvement.operateur,
         quantite=mouvement.quantite,
+        stock_avant=mouvement.stock_avant,
+        stock_apres=mouvement.stock_apres,
     )
 
 

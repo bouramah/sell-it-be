@@ -8,8 +8,8 @@ from app.core.database import get_db
 from app.core.db_errors import commit_or_409
 from app.core.module_actions import BOUTIQUE_GESTION, FOURNISSEUR_GESTION
 from app.core.security import get_current_user
-from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, FournisseurDB, UtilisateurDB
-from app.models.schemas import Boutique, Fournisseur, StatutBoutique
+from app.db_models.models import BoutiqueDB, BoutiqueSecteurDB, CommandeFournisseurDB, FournisseurDB, UtilisateurDB
+from app.models.schemas import Boutique, Fournisseur, StatutBoutique, StatutCommandeFournisseur, TopFournisseur
 from app.models.write_schemas import BoutiqueCreate, BoutiqueUpdate, FournisseurCreate, FournisseurUpdate
 from app.services.audit import log_audit
 
@@ -148,6 +148,43 @@ def list_fournisseurs(secteur: str | None = None, db: Session = Depends(get_db))
     if secteur:
         query = query.filter(FournisseurDB.secteur == secteur)
     return query.all()
+
+
+@router.get("/fournisseurs/top", response_model=list[TopFournisseur])
+def top_fournisseurs(
+    boutique_id: str | None = None,
+    limite: int = 10,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[TopFournisseur]:
+    """Classement des fournisseurs par montant d'achats réceptionnés — tableau de bord
+    comparatif fournisseurs (CDC demande client). Ne compte que les réceptions effectives,
+    même convention que la comptabilité (achats = commandes réceptionnées/clôturées)."""
+    query = db.query(CommandeFournisseurDB).filter(
+        CommandeFournisseurDB.statut.in_([StatutCommandeFournisseur.receptionnee, StatutCommandeFournisseur.cloturee])
+    )
+    if boutique_id:
+        assert_boutique_access(current_user, boutique_id)
+        query = query.filter(CommandeFournisseurDB.boutique_id == boutique_id)
+    elif not a_portee_reseau(current_user):
+        query = query.filter(CommandeFournisseurDB.boutique_id.in_(boutiques_autorisees(current_user)))
+    commandes = query.all()
+
+    fournisseurs_by_id = {f.id: f.nom for f in db.query(FournisseurDB).all()}
+    agrege: dict[str, dict] = {}
+    for c in commandes:
+        entry = agrege.setdefault(c.fournisseur_id, {"montant": 0.0, "nb": 0})
+        entry["montant"] += c.montant
+        entry["nb"] += 1
+
+    classement = sorted(agrege.items(), key=lambda kv: kv[1]["montant"], reverse=True)[:limite]
+    return [
+        TopFournisseur(
+            fournisseur_id=fid, fournisseur_nom=fournisseurs_by_id.get(fid, fid),
+            montant_achats=entry["montant"], nombre_commandes=entry["nb"],
+        )
+        for fid, entry in classement
+    ]
 
 
 @router.post("/fournisseurs", response_model=Fournisseur, status_code=201)
