@@ -394,5 +394,9 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
         ReferentielItem(id="mamadi-toure", nom="Mamadi Touré"),
         ReferentielItem(id="securite-express", nom="Sécurité Express"),
     ],
+    # Volontairement vide : les grades/échelons réels des écoles partenaires sont propres à
+    # GROUPE SKF SARL — l'administrateur les saisit lui-même via Paramètres → Référentiels
+    # (cf. module Aide aux Enseignants) plutôt qu'une nomenclature inventée ici.
+    "grades_enseignants": [],
 }
 

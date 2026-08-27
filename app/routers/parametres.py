@@ -5,13 +5,14 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.authorization import require_permission
 from app.core.database import get_db
-from app.core.module_actions import REFERENTIELS_GESTION, SECURITE_GESTION
+from app.core.module_actions import BAREME_CREDIT_ENSEIGNANT_GESTION, REFERENTIELS_GESTION, SECURITE_GESTION
 from app.core.security import get_current_user
 from app.data.fixtures import REFERENTIELS
-from app.db_models.models import ParametreApplicationDB, ParametreFiscalDB, ReferentielDB, UtilisateurDB
-from app.models.schemas import ParametreApplication, ParametreFiscal, ReferentielItem
-from app.models.write_schemas import ParametreApplicationUpdate, ParametreFiscalUpdate, ReferentielCreate, ReferentielUpdate
+from app.db_models.models import BaremeCreditEnseignantDB, EcoleDB, ParametreApplicationDB, ParametreFiscalDB, ReferentielDB, UtilisateurDB
+from app.models.schemas import BaremeCreditEnseignant, ParametreApplication, ParametreFiscal, ReferentielItem
+from app.models.write_schemas import BaremeCreditEnseignantCreate, ParametreApplicationUpdate, ParametreFiscalUpdate, ReferentielCreate, ReferentielUpdate
 from app.services.audit import log_audit
+from app.services.bareme_credit import verifier_chevauchement_bareme
 from app.services.fiscalite import get_parametre_fiscal
 
 router = APIRouter(prefix="/api/v1/parametres", tags=["parametres"])
@@ -78,6 +79,63 @@ def modifier_parametre_fiscal(
     db.commit()
     db.refresh(p)
     return p
+
+
+def _to_bareme_schema(b: BaremeCreditEnseignantDB, ecoles_by_id: dict[str, EcoleDB]) -> BaremeCreditEnseignant:
+    return BaremeCreditEnseignant(
+        id=b.id, ecole_id=b.ecole_id, ecole_nom=ecoles_by_id[b.ecole_id].nom if b.ecole_id in ecoles_by_id else None,
+        grade_echelon=b.grade_echelon, plafond=b.plafond, date_debut=b.date_debut, date_fin=b.date_fin,
+    )
+
+
+@router.get("/bareme-credit-enseignants", response_model=list[BaremeCreditEnseignant])
+def list_bareme_credit_enseignants(
+    ecole_id: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[BaremeCreditEnseignant]:
+    # Lecture ouverte — la fiche enseignant a besoin de résoudre le plafond sans nécessairement
+    # gérer le barème.
+    query = db.query(BaremeCreditEnseignantDB)
+    if ecole_id:
+        query = query.filter(BaremeCreditEnseignantDB.ecole_id == ecole_id)
+    ecoles_by_id = {e.id: e for e in db.query(EcoleDB).all()}
+    return [_to_bareme_schema(b, ecoles_by_id) for b in query.all()]
+
+
+@router.post("/bareme-credit-enseignants", response_model=BaremeCreditEnseignant, status_code=201)
+def create_bareme_credit_enseignant(
+    payload: BaremeCreditEnseignantCreate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> BaremeCreditEnseignant:
+    require_permission(db, current_user, BAREME_CREDIT_ENSEIGNANT_GESTION)
+    if payload.ecole_id and not db.get(EcoleDB, payload.ecole_id):
+        raise HTTPException(status_code=404, detail="École introuvable")
+    conflit = verifier_chevauchement_bareme(db, payload.ecole_id, payload.grade_echelon, payload.date_debut, payload.date_fin)
+    if conflit:
+        raise HTTPException(status_code=409, detail="Une période existante pour ce grade/échelon (et cette école) chevauche déjà cet intervalle")
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    b = BaremeCreditEnseignantDB(id=str(uuid.uuid4())[:8], created_by=auteur, updated_by=auteur, **payload.model_dump())
+    db.add(b)
+    db.commit()
+    db.refresh(b)
+    ecoles_by_id = {e.id: e for e in db.query(EcoleDB).all()}
+    return _to_bareme_schema(b, ecoles_by_id)
+
+
+@router.delete("/bareme-credit-enseignants/{bareme_id}", status_code=204)
+def delete_bareme_credit_enseignant(
+    bareme_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> None:
+    require_permission(db, current_user, BAREME_CREDIT_ENSEIGNANT_GESTION)
+    b = db.get(BaremeCreditEnseignantDB, bareme_id)
+    if not b:
+        raise HTTPException(status_code=404, detail="Barème introuvable")
+    db.delete(b)
+    db.commit()
 
 
 def _managed_categories(db: Session) -> list[str]:

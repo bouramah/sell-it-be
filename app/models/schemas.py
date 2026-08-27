@@ -53,6 +53,22 @@ class StatutDemandeCredit(str, Enum):
     refusee = "refusee"
 
 
+class StatutEcole(str, Enum):
+    active = "active"
+    inactive = "inactive"
+
+
+class TypeGarant(str, Enum):
+    referent = "referent"
+    comptabilite = "comptabilite"
+
+
+class StatutValidationGarant(str, Enum):
+    en_attente = "en_attente"
+    validee = "validee"
+    refusee = "refusee"
+
+
 class StatutPaiement(str, Enum):
     encaisse = "encaisse"
     en_attente = "en_attente"
@@ -530,6 +546,97 @@ class DemandeCredit(BaseModel):
     motif: str
     statut: StatutDemandeCredit
     date_creation: datetime
+
+
+# --- Aide aux Enseignants -----------------------------------------------------------
+
+class Ecole(BaseModel):
+    id: str
+    nom: str
+    adresse: str | None = None
+    referent_nom: str
+    referent_contact: str
+    comptabilite_nom: str
+    comptabilite_contact: str
+    statut: StatutEcole
+
+
+class Enseignant(BaseModel):
+    id: str
+    client_id: str
+    client_nom: str
+    client_contact: str
+    ecole_id: str
+    ecole_nom: str
+    grade_echelon: str
+    # None si l'appelant n'a pas le droit de voir cette donnée (réservé à l'administrateur) —
+    # jamais un chiffre inventé ou masqué autrement qu'en l'omettant explicitement.
+    salaire_reference: float | None = None
+    engagement_signe_url: str | None = None
+    engagement_signe_date: date | None = None
+    plafond_suspendu: bool
+    plafond_disponible: float
+    credit_autorise: bool
+
+
+class BaremeCreditEnseignant(BaseModel):
+    id: str
+    ecole_id: str | None = None
+    ecole_nom: str | None = None
+    grade_echelon: str
+    plafond: float
+    date_debut: date
+    date_fin: date | None = None
+
+
+class ValidationGarantCredit(BaseModel):
+    id: str
+    type_garant: TypeGarant
+    nom_garant: str
+    statut: StatutValidationGarant
+    date_reponse: datetime | None = None
+    motif_refus: str | None = None
+
+
+class ValidationGarantDetail(BaseModel):
+    """Vue publique (jeton) d'une demande de crédit enseignant à valider — jamais de donnée non
+    nécessaire à la décision du garant (le salaire n'apparaît que sur le jeton comptabilité)."""
+    enseignant_nom: str
+    ecole_nom: str
+    grade_echelon: str
+    montant_souhaite: float
+    motif: str
+    salaire_reference: float | None = None
+    type_garant: TypeGarant
+    statut: StatutValidationGarant
+    autre_garant_statut: StatutValidationGarant
+    expire_le: datetime
+
+
+class ValidationGarantDecision(BaseModel):
+    approuve: bool
+    motif_refus: str | None = None
+
+
+class VersementEcole(BaseModel):
+    id: str
+    ecole_id: str
+    ecole_nom: str
+    montant: float
+    date: date
+    reference: str | None = None
+    justificatif_url: str | None = None
+    note: str | None = None
+
+
+class SuiviEcole(BaseModel):
+    ecole_id: str
+    ecole_nom: str
+    nombre_enseignants: int
+    credits_en_cours: float
+    credits_en_retard: float
+    montant_verse: float
+    ecart: float
 
 
 # --- Transferts de stock -----------------------------------------------------------

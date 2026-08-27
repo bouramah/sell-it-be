@@ -36,3 +36,6 @@ STOCK_ECRITURE = "Modifier le stock (ajout de ligne, mouvement manuel, inventair
 REFERENTIELS_GESTION = "Gérer les référentiels (villes, catégories, motifs…)"
 SECURITE_GESTION = "Consulter le journal d'audit et gérer les paramètres de sécurité"
 REMISE_VALIDATION = "Valider une remise au-delà du seuil"
+ECOLE_GESTION = "Gérer les écoles partenaires et leurs garants"
+ENSEIGNANT_GESTION = "Gérer les enseignants bénéficiaires (aide aux enseignants)"
+BAREME_CREDIT_ENSEIGNANT_GESTION = "Paramétrer le barème de plafond de crédit enseignants"

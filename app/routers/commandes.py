@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,8 @@ from app.core.security import get_current_user
 from app.db_models.models import (
     CommandeClientDB,
     CommandeFournisseurDB,
+    DetteDB,
+    EnseignantDB,
     FournisseurDB,
     LigneCommandeClientDB,
     LigneCommandeFournisseurDB,
@@ -33,9 +35,12 @@ from app.models.schemas import (
     PalierPrix,
     StatutCommandeClient,
     StatutCommandeFournisseur,
+    StatutDette,
     StatutPaiement,
     StatutValidationRemise,
+    TiersType,
 )
+from app.services.bareme_credit import plafond_disponible
 from app.models.write_schemas import (
     CommandeClientCreate,
     CommandeClientUpdate,
@@ -208,6 +213,22 @@ def creer_commande_client(db: Session, payload: CommandeClientCreate, auteur: st
             id=str(uuid.uuid4())[:8], client_nom=c.client_nom, reference=f"#{c.id}", boutique_id=c.boutique_id,
             mode_paiement=payload.mode_paiement, date=date.today(), montant=montant, statut=statut_paiement,
         ))
+    else:
+        # Aide aux Enseignants : le crédit générique (credit_autorise) n'a aujourd'hui aucun
+        # plafond réellement appliqué — pour un enseignant spécifiquement, la vente à crédit doit
+        # rester dans le plafond disponible et crée automatiquement la dette correspondante
+        # (échéance 30 jours, cf. CDC Aide aux Enseignants §4.4/§4.5). Le crédit client générique
+        # hors enseignant garde son comportement actuel (réconciliation manuelle par le staff).
+        enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == payload.client_id).first() if payload.client_id else None
+        if enseignant:
+            if montant > plafond_disponible(db, enseignant):
+                raise HTTPException(status_code=400, detail="Montant supérieur au plafond de crédit disponible pour cet enseignant")
+            db.add(DetteDB(
+                id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=c.client_nom, client_id=payload.client_id,
+                boutique_id=c.boutique_id, montant_initial=montant, solde_restant=montant,
+                echeance=date.today() + timedelta(days=30), statut=StatutDette.en_cours,
+                created_by=auteur, updated_by=auteur,
+            ))
 
     # Réserve le stock dès la prise de commande (quantité disponible inchangée, réservée augmentée) —
     # tant qu'elle n'est pas annulée ou livrée. cf. CDC 3.4/6.3 : "quantité réservée (commandes en cours)".

@@ -15,6 +15,7 @@ from app.models.schemas import (
     StatutCommandeFournisseur,
     StatutDette,
     StatutEcartInventaire,
+    StatutEcole,
     StatutLivraison,
     StatutPromotion,
     StatutTransfert,
@@ -512,6 +513,61 @@ class DemandeCreditCreate(BaseModel):
     boutique_id: str
     montant_souhaite: float
     motif: str
+
+
+# --- Aide aux Enseignants -----------------------------------------------------------
+
+class EcoleCreate(BaseModel):
+    nom: str
+    adresse: str | None = None
+    referent_nom: str
+    referent_contact: str
+    comptabilite_nom: str
+    comptabilite_contact: str
+
+
+class EcoleUpdate(BaseModel):
+    nom: str | None = None
+    adresse: str | None = None
+    referent_nom: str | None = None
+    referent_contact: str | None = None
+    comptabilite_nom: str | None = None
+    comptabilite_contact: str | None = None
+    statut: StatutEcole | None = None
+
+
+class EnseignantCreate(BaseModel):
+    # Rattache un client existant si fourni ; sinon crée le client (nom + contact obligatoires).
+    client_id: str | None = None
+    nom: str | None = None
+    contact: str | None = None
+    boutique_ids: list[str] = []
+    ecole_id: str
+    grade_echelon: str
+    salaire_reference: float = Field(gt=0)
+
+
+class EnseignantUpdate(BaseModel):
+    ecole_id: str | None = None
+    grade_echelon: str | None = None
+    salaire_reference: float | None = Field(default=None, gt=0)
+    plafond_suspendu: bool | None = None
+
+
+class BaremeCreditEnseignantCreate(BaseModel):
+    ecole_id: str | None = None
+    grade_echelon: str
+    plafond: float = Field(gt=0)
+    date_debut: date
+    date_fin: date | None = None
+
+
+class VersementEcoleCreate(BaseModel):
+    ecole_id: str
+    montant: float = Field(gt=0)
+    date: date
+    reference: str | None = None
+    note: str | None = None
 
 
 class NotifierRemboursementRequest(BaseModel):

@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(n
 logging.getLogger("kfstore").setLevel(logging.INFO)
 
 from app.routers import (
+    aide_enseignants,
     auth,
     caisse,
     catalogue,
@@ -27,6 +28,8 @@ from app.routers import (
     depenses,
     dettes,
     documents,
+    ecoles,
+    enseignants,
     geographie,
     ia,
     livraisons,
@@ -43,6 +46,7 @@ from app.routers import (
     stock,
     transferts,
     utilisateurs,
+    validation_garant,
 )
 
 app = FastAPI(
@@ -92,6 +96,10 @@ app.include_router(securite.router)
 app.include_router(parametres.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
+app.include_router(ecoles.router)
+app.include_router(enseignants.router)
+app.include_router(validation_garant.router)
+app.include_router(aide_enseignants.router)
 
 
 @app.get("/api/v1/health")

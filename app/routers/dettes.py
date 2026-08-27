@@ -14,14 +14,27 @@ from app.db_models.models import (
     ClientDB,
     DemandeCreditDB,
     DetteDB,
+    EcoleDB,
+    EnseignantDB,
     FournisseurDB,
     MouvementCaisseDB,
     PaiementClientDB,
     PaiementFournisseurDB,
     RemboursementDB,
     UtilisateurDB,
+    ValidationGarantCreditDB,
 )
-from app.models.schemas import DemandeCredit, Remboursement, StatutCaisse, StatutDemandeCredit, StatutDette, StatutPaiement, TiersType, TypeMouvementCaisse
+from app.models.schemas import (
+    DemandeCredit,
+    Remboursement,
+    StatutCaisse,
+    StatutDemandeCredit,
+    StatutDette,
+    StatutPaiement,
+    TiersType,
+    TypeMouvementCaisse,
+    ValidationGarantCredit,
+)
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 from app.services.audit import log_audit
 from app.services.sms import get_sms_provider
@@ -150,6 +163,17 @@ def encaisser_remboursement(
     d.statut = StatutDette.soldee if d.solde_restant <= 0 else StatutDette.en_cours
     d.updated_by = auteur
 
+    if d.statut == StatutDette.soldee and d.client_id:
+        enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == d.client_id).first()
+        if enseignant and enseignant.plafond_suspendu:
+            # Ne relève la suspension que si aucune autre dette de cet enseignant n'est encore en retard.
+            autres_en_retard = db.query(DetteDB).filter(
+                DetteDB.client_id == d.client_id, DetteDB.id != d.id, DetteDB.statut == StatutDette.en_retard,
+            ).first()
+            if not autres_en_retard:
+                enseignant.plafond_suspendu = False
+                enseignant.updated_by = auteur
+
     # Une créance client encaissée fait rentrer de l'argent en caisse ; une dette fournisseur réglée en fait sortir.
     type_mouvement = TypeMouvementCaisse.encaissement if d.tiers_type == TiersType.client else TypeMouvementCaisse.decaissement
     signed_montant = payload.montant if type_mouvement == TypeMouvementCaisse.encaissement else -payload.montant
@@ -210,6 +234,24 @@ def envoyer_rappel_sms(
     if not get_sms_provider().send(tiers.contact, message):
         raise HTTPException(status_code=502, detail="Échec de l'envoi du SMS")
 
+    # Aide aux Enseignants : rappel envoyé aussi aux garants de l'école (référent + comptabilité),
+    # qui sont responsables du prélèvement sur la paye — cf. CDC §5.5 "rappel automatique".
+    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == d.client_id).first() if d.client_id else None
+    if enseignant:
+        ecole = db.get(EcoleDB, enseignant.ecole_id)
+        garant_message = (
+            f"KFSTORE — Rappel : {d.tiers_nom} a un solde de {montant} GNF à prélever sur la paye, "
+            f"échéance le {d.echeance.strftime('%d/%m/%Y')}."
+        )
+        get_sms_provider().send(ecole.referent_contact, garant_message)
+        get_sms_provider().send(ecole.comptabilite_contact, garant_message)
+        # Pas d'ordonnanceur dans ce backend (V1) : le rappel manuel est aussi le point où l'on
+        # constate un dépassement d'échéance et suspend le plafond (CDC §4.6), jusqu'à régularisation.
+        if date.today() > d.echeance:
+            d.statut = StatutDette.en_retard
+            enseignant.plafond_suspendu = True
+            enseignant.updated_by = f"{current_user.prenom} {current_user.nom}"
+
     log_audit(db, f"Rappel SMS envoyé — {d.tiers_nom} ({montant} GNF)", f"{current_user.prenom} {current_user.nom}", d.boutique_id)
     db.commit()
     return _to_ligne(d)
@@ -236,6 +278,28 @@ def list_demandes_credit(
     ]
 
 
+@router.get("/demandes-credit/{demande_id}/validations-garant", response_model=list[ValidationGarantCredit])
+def list_validations_garant(
+    demande_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[ValidationGarantCredit]:
+    """Statut des validations garant (référent/comptabilité) pour une demande de crédit
+    enseignant — lecture seule côté staff, la décision reste au garant via son jeton SMS."""
+    d = db.get(DemandeCreditDB, demande_id)
+    if not d:
+        raise HTTPException(status_code=404, detail="Demande introuvable")
+    assert_boutique_access(current_user, d.boutique_id)
+    validations = db.query(ValidationGarantCreditDB).filter(ValidationGarantCreditDB.demande_credit_id == demande_id).all()
+    return [
+        ValidationGarantCredit(
+            id=v.id, type_garant=v.type_garant, nom_garant=v.nom_garant, statut=v.statut,
+            date_reponse=v.date_reponse, motif_refus=v.motif_refus,
+        )
+        for v in validations
+    ]
+
+
 @router.post("/demandes-credit/{demande_id}/valider", response_model=DemandeCredit)
 def valider_demande_credit(
     demande_id: str,
@@ -249,6 +313,11 @@ def valider_demande_credit(
     assert_boutique_access(current_user, d.boutique_id)
     if d.statut != StatutDemandeCredit.en_attente:
         raise HTTPException(status_code=400, detail="Cette demande a déjà été traitée")
+    if db.query(EnseignantDB).filter(EnseignantDB.client_id == d.client_id).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Cette demande relève du circuit de validation par les garants (référent + comptabilité de l'école), pas de la validation staff.",
+        )
 
     client = db.get(ClientDB, d.client_id)
     if not client:
@@ -286,6 +355,11 @@ def refuser_demande_credit(
     assert_boutique_access(current_user, d.boutique_id)
     if d.statut != StatutDemandeCredit.en_attente:
         raise HTTPException(status_code=400, detail="Cette demande a déjà été traitée")
+    if db.query(EnseignantDB).filter(EnseignantDB.client_id == d.client_id).first():
+        raise HTTPException(
+            status_code=400,
+            detail="Cette demande relève du circuit de validation par les garants (référent + comptabilité de l'école), pas de la validation staff.",
+        )
 
     d.statut = StatutDemandeCredit.refusee
     d.updated_by = f"{current_user.prenom} {current_user.nom}"

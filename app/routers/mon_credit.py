@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_client
-from app.db_models.models import BoutiqueDB, ClientDB, DemandeCreditDB, DetteDB, RemboursementDB
+from app.db_models.models import BoutiqueDB, ClientDB, DemandeCreditDB, DetteDB, EnseignantDB, RemboursementDB
 from app.models.schemas import DemandeCredit, Remboursement, StatutBoutique, StatutDemandeCredit, TiersType
 from app.models.write_schemas import DemandeCreditCreate, NotifierRemboursementRequest
 from app.services.audit import log_audit
+from app.services.bareme_credit import plafond_disponible
 from app.services.notifications import nom_boutique, notifier_gerants_boutique
+from app.services.validation_garant import DemandeCreditEnseignantInput, creer_demande_credit_enseignant
 
 router = APIRouter(prefix="/api/v1/mon-credit", tags=["mon-credit"])
 
@@ -33,11 +35,18 @@ class LigneDetteClient(BaseModel):
     statut: str
 
 
+class InfosEnseignant(BaseModel):
+    ecole_nom: str
+    plafond_disponible: float
+    plafond_suspendu: bool
+
+
 class MonCredit(BaseModel):
     credit_autorise: bool
     solde_total: float
     dettes: list[LigneDetteClient]
     remboursements: list[Remboursement]
+    enseignant: InfosEnseignant | None = None
 
 
 class MessageResponse(BaseModel):
@@ -54,9 +63,14 @@ def mon_credit(client: ClientDB = Depends(get_current_client), db: Session = Dep
     remboursements = (
         db.query(RemboursementDB).join(DetteDB).filter(DetteDB.client_id == client.id).order_by(RemboursementDB.date.desc()).all()
     )
+    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == client.id).first()
     return MonCredit(
         credit_autorise=client.credit_autorise,
         solde_total=sum(d.solde_restant for d in dettes),
+        enseignant=InfosEnseignant(
+            ecole_nom=enseignant.ecole.nom, plafond_disponible=plafond_disponible(db, enseignant),
+            plafond_suspendu=enseignant.plafond_suspendu,
+        ) if enseignant else None,
         dettes=[
             LigneDetteClient(
                 id=d.id, boutique_id=d.boutique_id, montant_initial=d.montant_initial,
@@ -102,6 +116,25 @@ def demander_credit(
         raise HTTPException(status_code=404, detail="Boutique introuvable ou fermée")
     if payload.montant_souhaite <= 0:
         raise HTTPException(status_code=400, detail="Le montant doit être positif")
+
+    # Aide aux Enseignants : circuit de validation par les garants (référent + comptabilité de
+    # l'école), pas de validation staff — cf. app/services/validation_garant.py.
+    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == client.id).first()
+    if enseignant:
+        try:
+            d = creer_demande_credit_enseignant(
+                db, enseignant,
+                DemandeCreditEnseignantInput(boutique_id=payload.boutique_id, montant_souhaite=payload.montant_souhaite, motif=payload.motif),
+                cree_par=f"{client.nom} (appli mobile client)",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        db.commit()
+        db.refresh(d)
+        return DemandeCredit(
+            id=d.id, client_id=d.client_id, client_nom=client.nom, boutique_id=d.boutique_id,
+            montant_souhaite=d.montant_souhaite, motif=d.motif, statut=d.statut, date_creation=d.date_creation,
+        )
 
     d = DemandeCreditDB(
         id=str(uuid.uuid4())[:8], client_id=client.id, boutique_id=payload.boutique_id,
