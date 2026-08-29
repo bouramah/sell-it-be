@@ -50,11 +50,14 @@ def dashboard(
         en_cours = sum(d.solde_restant for d in dettes if d.statut == StatutDette.en_cours)
         en_retard = sum(d.solde_restant for d in dettes if d.statut == StatutDette.en_retard)
         verse = sum(v.montant for v in db.query(VersementEtablissementDB).filter(VersementEtablissementDB.etablissement_id == e.id).all())
-        credits_accordes = sum(d.montant_initial for d in dettes)
         resultat.append(SuiviEtablissement(
             etablissement_id=e.id, etablissement_nom=e.nom, nombre_beneficiaires=len(client_ids),
             credits_en_cours=en_cours, credits_en_retard=en_retard, montant_verse=verse,
-            ecart=credits_accordes - verse,
+            # L'écart est le solde réellement encore dû (en_cours + en_retard), pas "accordé moins
+            # versements groupés" : un bénéficiaire qui rembourse directement en boutique (hors
+            # versement groupé de son établissement) ne doit pas faire gonfler indéfiniment un
+            # écart qui serait pourtant déjà résorbé dans les faits.
+            ecart=en_cours + en_retard,
         ))
     return resultat
 
