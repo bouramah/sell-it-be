@@ -19,7 +19,7 @@ from app.models.schemas import (
     StatutDemandeCredit,
     StatutDette,
     StatutEcartInventaire,
-    StatutEcole,
+    StatutEtablissement,
     StatutLivraison,
     StatutPaiement,
     StatutPromotion,
@@ -438,7 +438,7 @@ class DetteDB(AuditMixin, Base):
     solde_restant: Mapped[float] = mapped_column(Float)
     echeance: Mapped[date] = mapped_column(Date)
     statut: Mapped[StatutDette] = mapped_column(Enum(StatutDette))
-    # Trace la dette jusqu'à sa demande d'origine (ex. crédit enseignant activé par les garants)
+    # Trace la dette jusqu'à sa demande d'origine (ex. crédit Aide Humanitaire activé par les garants)
     # sans dépendre d'un rapprochement fragile sur tiers_nom.
     demande_credit_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("demandes_credit.id", ondelete="SET NULL"), nullable=True)
 
@@ -475,60 +475,65 @@ class DemandeCreditDB(AuditMixin, Base):
     date_creation: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class EcoleDB(AuditMixin, Base):
-    """École partenaire du module « Aide aux Enseignants » — porte directement ses deux garants
-    (référent + comptabilité) plutôt qu'une table de contacts séparée, car une école n'a
-    toujours qu'un seul de chaque à un instant donné (CDC §4.1)."""
-    __tablename__ = "ecoles"
+class EtablissementDB(AuditMixin, Base):
+    """Établissement partenaire du module « Aide Humanitaire » (école, établissement de santé,
+    entreprise, ou autre structure) — porte directement ses deux garants (référent + comptabilité/
+    RH) plutôt qu'une table de contacts séparée, car un établissement n'a toujours qu'un seul de
+    chaque à un instant donné. type_etablissement est un texte libre validé via le référentiel
+    "types_etablissement" (Paramètres → Référentiels), extensible par l'admin."""
+    __tablename__ = "etablissements"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(160))
+    type_etablissement: Mapped[str] = mapped_column(String(60))
     adresse: Mapped[str | None] = mapped_column(String(255), nullable=True)
     referent_nom: Mapped[str] = mapped_column(String(160))
     referent_contact: Mapped[str] = mapped_column(String(40))
     comptabilite_nom: Mapped[str] = mapped_column(String(160))
     comptabilite_contact: Mapped[str] = mapped_column(String(40))
-    statut: Mapped[StatutEcole] = mapped_column(Enum(StatutEcole), default=StatutEcole.active)
+    statut: Mapped[StatutEtablissement] = mapped_column(Enum(StatutEtablissement), default=StatutEtablissement.active)
 
 
-class EnseignantDB(AuditMixin, Base):
-    """Fiche complémentaire d'un enseignant bénéficiaire — l'enseignant est toujours aussi un
-    ClientDB (relation 1:1 via client_id) : réutilise credit_autorise, DetteDB, RemboursementDB
-    et les rappels SMS déjà en place, cf. plan « Aide aux Enseignants »."""
-    __tablename__ = "enseignants"
+class BeneficiaireDB(AuditMixin, Base):
+    """Fiche complémentaire d'un bénéficiaire de l'Aide Humanitaire — le bénéficiaire est toujours
+    aussi un ClientDB (relation 1:1 via client_id) : réutilise credit_autorise, DetteDB,
+    RemboursementDB et les rappels SMS déjà en place. numero_membre est le numéro imprimé sur la
+    carte de membre (format KF-AH-XXXXXX)."""
+    __tablename__ = "beneficiaires"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     client_id: Mapped[str] = mapped_column(String(40), ForeignKey("clients.id", ondelete="CASCADE"), unique=True)
-    ecole_id: Mapped[str] = mapped_column(String(40), ForeignKey("ecoles.id"))
-    # Valeurs gérées via le référentiel "grades_enseignants" (Paramètres → Référentiels).
-    grade_echelon: Mapped[str] = mapped_column(String(120))
+    etablissement_id: Mapped[str] = mapped_column(String(40), ForeignKey("etablissements.id"))
+    numero_membre: Mapped[str] = mapped_column(String(20), unique=True)
+    # Valeurs gérées via le référentiel "postes_beneficiaires" (Paramètres → Référentiels).
+    poste: Mapped[str] = mapped_column(String(120))
     salaire_reference: Mapped[float] = mapped_column(Float)
     engagement_signe_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     engagement_signe_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Suspendu tant qu'un impayé n'est pas régularisé (CDC §4.6) — bloque tout nouveau crédit
+    # Suspendu tant qu'un impayé n'est pas régularisé — bloque tout nouveau crédit
     # indépendamment du plafond calculé.
     plafond_suspendu: Mapped[bool] = mapped_column(Boolean, default=False)
 
     client: Mapped["ClientDB"] = relationship()
-    ecole: Mapped["EcoleDB"] = relationship()
+    etablissement: Mapped["EtablissementDB"] = relationship()
 
 
-class BaremeCreditEnseignantDB(AuditMixin, Base):
-    """Plafond de crédit par grade/échelon, avec période de validité — même principe que
-    PrixPeriodeDB (app/services/pricing.py) : une ligne ecole_id=None fait référence réseau,
-    une ligne ecole_id=X la surcharge pour cette école si elle couvre la date."""
-    __tablename__ = "baremes_credit_enseignants"
+class BaremeCreditBeneficiaireDB(AuditMixin, Base):
+    """Plafond de crédit par poste, avec période de validité — même principe que PrixPeriodeDB
+    (app/services/pricing.py) : une ligne etablissement_id=None fait référence réseau, une ligne
+    etablissement_id=X la surcharge pour cet établissement si elle couvre la date."""
+    __tablename__ = "baremes_credit_beneficiaires"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    ecole_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("ecoles.id", ondelete="CASCADE"), nullable=True)
-    grade_echelon: Mapped[str] = mapped_column(String(120))
+    etablissement_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("etablissements.id", ondelete="CASCADE"), nullable=True)
+    poste: Mapped[str] = mapped_column(String(120))
     plafond: Mapped[float] = mapped_column(Float)
     date_debut: Mapped[date] = mapped_column(Date)
     date_fin: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class ValidationGarantCreditDB(AuditMixin, Base):
-    """Une ligne par garant (référent, comptabilité) pour une demande de crédit enseignant —
+    """Une ligne par garant (référent, comptabilité) pour une demande de crédit Aide Humanitaire —
     validée via un lien SMS à jeton unique, sans compte KFSTORE (les garants ne sont pas des
     utilisateurs du système). Le crédit s'active dès que les deux lignes sont "validee"."""
     __tablename__ = "validations_garant_credit"
@@ -545,14 +550,14 @@ class ValidationGarantCreditDB(AuditMixin, Base):
     expire_le: Mapped[datetime] = mapped_column(DateTime)
 
 
-class VersementEcoleDB(AuditMixin, Base):
-    """Versement groupé reçu d'une école (reversement des prélèvements sur paye) — distinct des
-    RemboursementDB individuels : un seul virement peut couvrir plusieurs enseignants à la fois,
-    d'où un registre séparé pour le rapprochement école par école (CDC §4.5/§5.4)."""
-    __tablename__ = "versements_ecoles"
+class VersementEtablissementDB(AuditMixin, Base):
+    """Versement groupé reçu d'un établissement (reversement des prélèvements sur paye) — distinct
+    des RemboursementDB individuels : un seul virement peut couvrir plusieurs bénéficiaires à la
+    fois, d'où un registre séparé pour le rapprochement établissement par établissement."""
+    __tablename__ = "versements_etablissements"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    ecole_id: Mapped[str] = mapped_column(String(40), ForeignKey("ecoles.id"))
+    etablissement_id: Mapped[str] = mapped_column(String(40), ForeignKey("etablissements.id"))
     montant: Mapped[float] = mapped_column(Float)
     date: Mapped[date] = mapped_column(Date)
     reference: Mapped[str | None] = mapped_column(String(160), nullable=True)

@@ -394,9 +394,17 @@ REFERENTIELS: dict[str, list[ReferentielItem]] = {
         ReferentielItem(id="mamadi-toure", nom="Mamadi Touré"),
         ReferentielItem(id="securite-express", nom="Sécurité Express"),
     ],
-    # Volontairement vide : les grades/échelons réels des écoles partenaires sont propres à
+    # Volontairement vide : les postes réels des établissements partenaires sont propres à
     # GROUPE SKF SARL — l'administrateur les saisit lui-même via Paramètres → Référentiels
-    # (cf. module Aide aux Enseignants) plutôt qu'une nomenclature inventée ici.
-    "grades_enseignants": [],
+    # (cf. module Aide Humanitaire) plutôt qu'une nomenclature inventée ici.
+    "postes_beneficiaires": [],
+    # Catégories de départ pour les établissements partenaires — librement extensible par
+    # l'admin (cf. module Aide Humanitaire), contrairement à "postes_beneficiaires" ci-dessus.
+    "types_etablissement": [
+        ReferentielItem(id="education", nom="Éducation"),
+        ReferentielItem(id="sante", nom="Santé"),
+        ReferentielItem(id="entreprise", nom="Entreprise"),
+        ReferentielItem(id="autre", nom="Autre"),
+    ],
 }
 

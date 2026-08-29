@@ -1,5 +1,5 @@
-"""Validation d'une demande de crédit enseignant par ses garants — endpoints publics (aucune
-authentification KFSTORE) : le jeton unique envoyé par SMS EST l'authentification, cf.
+"""Validation d'une demande de crédit Aide Humanitaire par ses garants — endpoints publics
+(aucune authentification KFSTORE) : le jeton unique envoyé par SMS EST l'authentification, cf.
 app/services/validation_garant.py pour la création des jetons et l'envoi des SMS."""
 import uuid
 from datetime import date, timedelta
@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
-from app.db_models.models import DemandeCreditDB, DetteDB, EnseignantDB, ValidationGarantCreditDB
+from app.db_models.models import BeneficiaireDB, DemandeCreditDB, DetteDB, ValidationGarantCreditDB
 from app.models.schemas import StatutDemandeCredit, StatutDette, StatutValidationGarant, TiersType, TypeGarant, ValidationGarantDecision, ValidationGarantDetail
 from app.services.audit import log_audit
 from app.services.notifications import notifier_client
@@ -28,16 +28,16 @@ def _charger(db: Session, token: str) -> ValidationGarantCreditDB:
 
 def _detail(db: Session, v: ValidationGarantCreditDB) -> ValidationGarantDetail:
     demande = db.get(DemandeCreditDB, v.demande_credit_id)
-    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == demande.client_id).first()
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
     autre = (
         db.query(ValidationGarantCreditDB)
         .filter(ValidationGarantCreditDB.demande_credit_id == demande.id, ValidationGarantCreditDB.id != v.id)
         .first()
     )
     return ValidationGarantDetail(
-        enseignant_nom=enseignant.client.nom, ecole_nom=enseignant.ecole.nom, grade_echelon=enseignant.grade_echelon,
+        beneficiaire_nom=beneficiaire.client.nom, etablissement_nom=beneficiaire.etablissement.nom, poste=beneficiaire.poste,
         montant_souhaite=demande.montant_souhaite, motif=demande.motif,
-        salaire_reference=enseignant.salaire_reference if v.type_garant == TypeGarant.comptabilite else None,
+        salaire_reference=beneficiaire.salaire_reference if v.type_garant == TypeGarant.comptabilite else None,
         type_garant=v.type_garant, statut=v.statut,
         autre_garant_statut=autre.statut if autre else StatutValidationGarant.en_attente,
         expire_le=v.expire_le,
@@ -63,16 +63,16 @@ def repondre(token: str, payload: ValidationGarantDecision, db: Session = Depend
     v.motif_refus = payload.motif_refus if not payload.approuve else None
 
     demande = db.get(DemandeCreditDB, v.demande_credit_id)
-    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == demande.client_id).first()
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
     toutes = db.query(ValidationGarantCreditDB).filter(ValidationGarantCreditDB.demande_credit_id == demande.id).all()
-    auteur = f"Garant {v.type_garant.value} — {enseignant.ecole.nom}"
+    auteur = f"Garant {v.type_garant.value} — {beneficiaire.etablissement.nom}"
 
     if any(a.statut == StatutValidationGarant.refusee for a in toutes):
         demande.statut = StatutDemandeCredit.refusee
         demande.updated_by = auteur
-        log_audit(db, f"Demande de crédit enseignant refusée par un garant — {enseignant.client.nom}", auteur, demande.boutique_id)
+        log_audit(db, f"Demande de crédit Aide Humanitaire refusée par un garant — {beneficiaire.client.nom}", auteur, demande.boutique_id)
         notifier_client(
-            db, enseignant.client.nom,
+            db, beneficiaire.client.nom,
             f"KFSTORE — Votre demande de crédit alimentaire de {demande.montant_souhaite:,.0f} GNF a été refusée "
             f"par un de vos garants.".replace(",", " "),
         )
@@ -80,15 +80,15 @@ def repondre(token: str, payload: ValidationGarantDecision, db: Session = Depend
         demande.statut = StatutDemandeCredit.validee
         demande.updated_by = auteur
         dette = DetteDB(
-            id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=enseignant.client.nom, client_id=enseignant.client_id,
+            id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=beneficiaire.client.nom, client_id=beneficiaire.client_id,
             boutique_id=demande.boutique_id, montant_initial=demande.montant_souhaite, solde_restant=demande.montant_souhaite,
             echeance=date.today() + timedelta(days=30), statut=StatutDette.en_cours, demande_credit_id=demande.id,
             created_by=auteur, updated_by=auteur,
         )
         db.add(dette)
-        log_audit(db, f"Crédit enseignant activé (2 garants validés) — {enseignant.client.nom} ({demande.montant_souhaite:,.0f} GNF)".replace(",", " "), auteur, demande.boutique_id)
+        log_audit(db, f"Crédit Aide Humanitaire activé (2 garants validés) — {beneficiaire.client.nom} ({demande.montant_souhaite:,.0f} GNF)".replace(",", " "), auteur, demande.boutique_id)
         notifier_client(
-            db, enseignant.client.nom,
+            db, beneficiaire.client.nom,
             f"KFSTORE — Votre crédit alimentaire de {demande.montant_souhaite:,.0f} GNF est activé, vous pouvez "
             f"retirer vos denrées en boutique. Remboursement à échéance du {dette.echeance.strftime('%d/%m/%Y')}.".replace(",", " "),
         )

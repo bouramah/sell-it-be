@@ -12,7 +12,7 @@ from app.db_models.models import (
     CommandeClientDB,
     CommandeFournisseurDB,
     DetteDB,
-    EnseignantDB,
+    BeneficiaireDB,
     FournisseurDB,
     LigneCommandeClientDB,
     LigneCommandeFournisseurDB,
@@ -214,15 +214,15 @@ def creer_commande_client(db: Session, payload: CommandeClientCreate, auteur: st
             mode_paiement=payload.mode_paiement, date=date.today(), montant=montant, statut=statut_paiement,
         ))
     else:
-        # Aide aux Enseignants : le crédit générique (credit_autorise) n'a aujourd'hui aucun
-        # plafond réellement appliqué — pour un enseignant spécifiquement, la vente à crédit doit
-        # rester dans le plafond disponible et crée automatiquement la dette correspondante
-        # (échéance 30 jours, cf. CDC Aide aux Enseignants §4.4/§4.5). Le crédit client générique
-        # hors enseignant garde son comportement actuel (réconciliation manuelle par le staff).
-        enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == payload.client_id).first() if payload.client_id else None
-        if enseignant:
-            if montant > plafond_disponible(db, enseignant):
-                raise HTTPException(status_code=400, detail="Montant supérieur au plafond de crédit disponible pour cet enseignant")
+        # Aide Humanitaire : le crédit générique (credit_autorise) n'a aujourd'hui aucun plafond
+        # réellement appliqué — pour un bénéficiaire spécifiquement, la vente à crédit doit rester
+        # dans le plafond disponible et crée automatiquement la dette correspondante (échéance 30
+        # jours). Le crédit client générique hors bénéficiaire garde son comportement actuel
+        # (réconciliation manuelle par le staff).
+        beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == payload.client_id).first() if payload.client_id else None
+        if beneficiaire:
+            if montant > plafond_disponible(db, beneficiaire):
+                raise HTTPException(status_code=400, detail="Montant supérieur au plafond de crédit disponible pour ce bénéficiaire")
             db.add(DetteDB(
                 id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=c.client_nom, client_id=payload.client_id,
                 boutique_id=c.boutique_id, montant_initial=montant, solde_restant=montant,

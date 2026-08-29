@@ -15,7 +15,7 @@ from app.models.schemas import (
     StatutCommandeFournisseur,
     StatutDette,
     StatutEcartInventaire,
-    StatutEcole,
+    StatutEtablissement,
     StatutLivraison,
     StatutPromotion,
     StatutTransfert,
@@ -515,10 +515,11 @@ class DemandeCreditCreate(BaseModel):
     motif: str
 
 
-# --- Aide aux Enseignants -----------------------------------------------------------
+# --- Aide Humanitaire -----------------------------------------------------------
 
-class EcoleCreate(BaseModel):
+class EtablissementCreate(BaseModel):
     nom: str
+    type_etablissement: str
     adresse: str | None = None
     referent_nom: str
     referent_contact: str
@@ -526,44 +527,45 @@ class EcoleCreate(BaseModel):
     comptabilite_contact: str
 
 
-class EcoleUpdate(BaseModel):
+class EtablissementUpdate(BaseModel):
     nom: str | None = None
+    type_etablissement: str | None = None
     adresse: str | None = None
     referent_nom: str | None = None
     referent_contact: str | None = None
     comptabilite_nom: str | None = None
     comptabilite_contact: str | None = None
-    statut: StatutEcole | None = None
+    statut: StatutEtablissement | None = None
 
 
-class EnseignantCreate(BaseModel):
+class BeneficiaireCreate(BaseModel):
     # Rattache un client existant si fourni ; sinon crée le client (nom + contact obligatoires).
     client_id: str | None = None
     nom: str | None = None
     contact: str | None = None
     boutique_ids: list[str] = []
-    ecole_id: str
-    grade_echelon: str
+    etablissement_id: str
+    poste: str
     salaire_reference: float = Field(gt=0)
 
 
-class EnseignantUpdate(BaseModel):
-    ecole_id: str | None = None
-    grade_echelon: str | None = None
+class BeneficiaireUpdate(BaseModel):
+    etablissement_id: str | None = None
+    poste: str | None = None
     salaire_reference: float | None = Field(default=None, gt=0)
     plafond_suspendu: bool | None = None
 
 
-class BaremeCreditEnseignantCreate(BaseModel):
-    ecole_id: str | None = None
-    grade_echelon: str
+class BaremeCreditBeneficiaireCreate(BaseModel):
+    etablissement_id: str | None = None
+    poste: str
     plafond: float = Field(gt=0)
     date_debut: date
     date_fin: date | None = None
 
 
-class VersementEcoleCreate(BaseModel):
-    ecole_id: str
+class VersementEtablissementCreate(BaseModel):
+    etablissement_id: str
     montant: float = Field(gt=0)
     date: date
     reference: str | None = None

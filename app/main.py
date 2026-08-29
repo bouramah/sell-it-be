@@ -16,8 +16,9 @@ logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(n
 logging.getLogger("kfstore").setLevel(logging.INFO)
 
 from app.routers import (
-    aide_enseignants,
+    aide_humanitaire,
     auth,
+    beneficiaires,
     caisse,
     catalogue,
     client_auth,
@@ -28,8 +29,7 @@ from app.routers import (
     depenses,
     dettes,
     documents,
-    ecoles,
-    enseignants,
+    etablissements,
     geographie,
     ia,
     livraisons,
@@ -96,10 +96,10 @@ app.include_router(securite.router)
 app.include_router(parametres.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
-app.include_router(ecoles.router)
-app.include_router(enseignants.router)
+app.include_router(etablissements.router)
+app.include_router(beneficiaires.router)
 app.include_router(validation_garant.router)
-app.include_router(aide_enseignants.router)
+app.include_router(aide_humanitaire.router)
 
 
 @app.get("/api/v1/health")

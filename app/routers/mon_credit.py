@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import get_current_client
-from app.db_models.models import BoutiqueDB, ClientDB, DemandeCreditDB, DetteDB, EnseignantDB, RemboursementDB
+from app.db_models.models import BeneficiaireDB, BoutiqueDB, ClientDB, DemandeCreditDB, DetteDB, RemboursementDB
 from app.models.schemas import DemandeCredit, Remboursement, StatutBoutique, StatutDemandeCredit, TiersType
 from app.models.write_schemas import DemandeCreditCreate, NotifierRemboursementRequest
 from app.services.audit import log_audit
 from app.services.bareme_credit import plafond_disponible
 from app.services.notifications import nom_boutique, notifier_gerants_boutique
-from app.services.validation_garant import DemandeCreditEnseignantInput, creer_demande_credit_enseignant
+from app.services.validation_garant import DemandeCreditBeneficiaireInput, creer_demande_credit_beneficiaire
 
 router = APIRouter(prefix="/api/v1/mon-credit", tags=["mon-credit"])
 
@@ -35,8 +35,8 @@ class LigneDetteClient(BaseModel):
     statut: str
 
 
-class InfosEnseignant(BaseModel):
-    ecole_nom: str
+class InfosBeneficiaire(BaseModel):
+    etablissement_nom: str
     plafond_disponible: float
     plafond_suspendu: bool
 
@@ -46,7 +46,7 @@ class MonCredit(BaseModel):
     solde_total: float
     dettes: list[LigneDetteClient]
     remboursements: list[Remboursement]
-    enseignant: InfosEnseignant | None = None
+    beneficiaire: InfosBeneficiaire | None = None
 
 
 class MessageResponse(BaseModel):
@@ -63,14 +63,14 @@ def mon_credit(client: ClientDB = Depends(get_current_client), db: Session = Dep
     remboursements = (
         db.query(RemboursementDB).join(DetteDB).filter(DetteDB.client_id == client.id).order_by(RemboursementDB.date.desc()).all()
     )
-    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == client.id).first()
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == client.id).first()
     return MonCredit(
         credit_autorise=client.credit_autorise,
         solde_total=sum(d.solde_restant for d in dettes),
-        enseignant=InfosEnseignant(
-            ecole_nom=enseignant.ecole.nom, plafond_disponible=plafond_disponible(db, enseignant),
-            plafond_suspendu=enseignant.plafond_suspendu,
-        ) if enseignant else None,
+        beneficiaire=InfosBeneficiaire(
+            etablissement_nom=beneficiaire.etablissement.nom, plafond_disponible=plafond_disponible(db, beneficiaire),
+            plafond_suspendu=beneficiaire.plafond_suspendu,
+        ) if beneficiaire else None,
         dettes=[
             LigneDetteClient(
                 id=d.id, boutique_id=d.boutique_id, montant_initial=d.montant_initial,
@@ -117,14 +117,14 @@ def demander_credit(
     if payload.montant_souhaite <= 0:
         raise HTTPException(status_code=400, detail="Le montant doit être positif")
 
-    # Aide aux Enseignants : circuit de validation par les garants (référent + comptabilité de
-    # l'école), pas de validation staff — cf. app/services/validation_garant.py.
-    enseignant = db.query(EnseignantDB).filter(EnseignantDB.client_id == client.id).first()
-    if enseignant:
+    # Aide Humanitaire : circuit de validation par les garants (référent + comptabilité de
+    # l'établissement), pas de validation staff — cf. app/services/validation_garant.py.
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == client.id).first()
+    if beneficiaire:
         try:
-            d = creer_demande_credit_enseignant(
-                db, enseignant,
-                DemandeCreditEnseignantInput(boutique_id=payload.boutique_id, montant_souhaite=payload.montant_souhaite, motif=payload.motif),
+            d = creer_demande_credit_beneficiaire(
+                db, beneficiaire,
+                DemandeCreditBeneficiaireInput(boutique_id=payload.boutique_id, montant_souhaite=payload.montant_souhaite, motif=payload.motif),
                 cree_par=f"{client.nom} (appli mobile client)",
             )
         except ValueError as exc:

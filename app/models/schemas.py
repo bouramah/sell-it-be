@@ -53,7 +53,7 @@ class StatutDemandeCredit(str, Enum):
     refusee = "refusee"
 
 
-class StatutEcole(str, Enum):
+class StatutEtablissement(str, Enum):
     active = "active"
     inactive = "inactive"
 
@@ -548,27 +548,29 @@ class DemandeCredit(BaseModel):
     date_creation: datetime
 
 
-# --- Aide aux Enseignants -----------------------------------------------------------
+# --- Aide Humanitaire -----------------------------------------------------------
 
-class Ecole(BaseModel):
+class Etablissement(BaseModel):
     id: str
     nom: str
+    type_etablissement: str
     adresse: str | None = None
     referent_nom: str
     referent_contact: str
     comptabilite_nom: str
     comptabilite_contact: str
-    statut: StatutEcole
+    statut: StatutEtablissement
 
 
-class Enseignant(BaseModel):
+class Beneficiaire(BaseModel):
     id: str
     client_id: str
     client_nom: str
     client_contact: str
-    ecole_id: str
-    ecole_nom: str
-    grade_echelon: str
+    etablissement_id: str
+    etablissement_nom: str
+    numero_membre: str
+    poste: str
     # None si l'appelant n'a pas le droit de voir cette donnée (réservé à l'administrateur) —
     # jamais un chiffre inventé ou masqué autrement qu'en l'omettant explicitement.
     salaire_reference: float | None = None
@@ -579,11 +581,11 @@ class Enseignant(BaseModel):
     credit_autorise: bool
 
 
-class BaremeCreditEnseignant(BaseModel):
+class BaremeCreditBeneficiaire(BaseModel):
     id: str
-    ecole_id: str | None = None
-    ecole_nom: str | None = None
-    grade_echelon: str
+    etablissement_id: str | None = None
+    etablissement_nom: str | None = None
+    poste: str
     plafond: float
     date_debut: date
     date_fin: date | None = None
@@ -599,11 +601,11 @@ class ValidationGarantCredit(BaseModel):
 
 
 class ValidationGarantDetail(BaseModel):
-    """Vue publique (jeton) d'une demande de crédit enseignant à valider — jamais de donnée non
-    nécessaire à la décision du garant (le salaire n'apparaît que sur le jeton comptabilité)."""
-    enseignant_nom: str
-    ecole_nom: str
-    grade_echelon: str
+    """Vue publique (jeton) d'une demande de crédit Aide Humanitaire à valider — jamais de donnée
+    non nécessaire à la décision du garant (le salaire n'apparaît que sur le jeton comptabilité)."""
+    beneficiaire_nom: str
+    etablissement_nom: str
+    poste: str
     montant_souhaite: float
     motif: str
     salaire_reference: float | None = None
@@ -618,10 +620,10 @@ class ValidationGarantDecision(BaseModel):
     motif_refus: str | None = None
 
 
-class VersementEcole(BaseModel):
+class VersementEtablissement(BaseModel):
     id: str
-    ecole_id: str
-    ecole_nom: str
+    etablissement_id: str
+    etablissement_nom: str
     montant: float
     date: date
     reference: str | None = None
@@ -629,10 +631,10 @@ class VersementEcole(BaseModel):
     note: str | None = None
 
 
-class SuiviEcole(BaseModel):
-    ecole_id: str
-    ecole_nom: str
-    nombre_enseignants: int
+class SuiviEtablissement(BaseModel):
+    etablissement_id: str
+    etablissement_nom: str
+    nombre_beneficiaires: int
     credits_en_cours: float
     credits_en_retard: float
     montant_verse: float
