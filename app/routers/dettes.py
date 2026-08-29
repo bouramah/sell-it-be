@@ -37,6 +37,7 @@ from app.models.schemas import (
 )
 from app.models.write_schemas import DetteCreate, RemboursementCreate
 from app.services.audit import log_audit
+from app.services.bareme_credit import regler_dette_beneficiaire
 from app.services.sms import get_sms_provider
 
 router = APIRouter(prefix="/api/v1/dettes", tags=["dettes"])
@@ -146,33 +147,7 @@ def encaisser_remboursement(
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un encaissement")
 
     auteur = f"{current_user.prenom} {current_user.nom}"
-    r = RemboursementDB(
-        id=str(uuid.uuid4())[:8],
-        dette_id=dette_id,
-        caisse_id=payload.caisse_id,
-        montant=payload.montant,
-        mode_paiement=payload.mode_paiement,
-        date=date.today(),
-        operateur=payload.operateur,
-        created_by=auteur,
-        updated_by=auteur,
-    )
-    db.add(r)
-
-    d.solde_restant -= payload.montant
-    d.statut = StatutDette.soldee if d.solde_restant <= 0 else StatutDette.en_cours
-    d.updated_by = auteur
-
-    if d.statut == StatutDette.soldee and d.client_id:
-        beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == d.client_id).first()
-        if beneficiaire and beneficiaire.plafond_suspendu:
-            # Ne relève la suspension que si aucune autre dette de ce bénéficiaire n'est encore en retard.
-            autres_en_retard = db.query(DetteDB).filter(
-                DetteDB.client_id == d.client_id, DetteDB.id != d.id, DetteDB.statut == StatutDette.en_retard,
-            ).first()
-            if not autres_en_retard:
-                beneficiaire.plafond_suspendu = False
-                beneficiaire.updated_by = auteur
+    regler_dette_beneficiaire(db, d, payload.montant, payload.mode_paiement, date.today(), payload.operateur, auteur, caisse_id=payload.caisse_id)
 
     # Une créance client encaissée fait rentrer de l'argent en caisse ; une dette fournisseur réglée en fait sortir.
     type_mouvement = TypeMouvementCaisse.encaissement if d.tiers_type == TiersType.client else TypeMouvementCaisse.decaissement

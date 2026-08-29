@@ -629,6 +629,7 @@ class VersementEtablissement(BaseModel):
     reference: str | None = None
     justificatif_url: str | None = None
     note: str | None = None
+    beneficiaires_regles: list[str] = []
 
 
 class SuiviEtablissement(BaseModel):

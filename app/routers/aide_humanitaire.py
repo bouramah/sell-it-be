@@ -13,14 +13,27 @@ from app.core.authorization import require_permission
 from app.core.database import get_db
 from app.core.module_actions import BENEFICIAIRE_GESTION
 from app.core.security import get_current_user
-from app.db_models.models import BeneficiaireDB, DetteDB, EtablissementDB, UtilisateurDB, VersementEtablissementDB
-from app.models.schemas import StatutDette, SuiviEtablissement, VersementEtablissement
+from app.db_models.models import BeneficiaireDB, ClientDB, DetteDB, EtablissementDB, RemboursementDB, UtilisateurDB, VersementEtablissementDB
+from app.models.schemas import ModePaiement, StatutDette, SuiviEtablissement, VersementEtablissement
 from app.models.write_schemas import VersementEtablissementCreate
+from app.routers.dettes import LigneDette, _to_ligne
+from app.services.bareme_credit import regler_dette_beneficiaire
 
 router = APIRouter(prefix="/api/v1/aide-humanitaire", tags=["aide-humanitaire"])
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "versements"
 ALLOWED_DOCUMENT_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "application/pdf": ".pdf"}
+
+
+def _to_versement(db: Session, v: VersementEtablissementDB, etablissement_nom: str) -> VersementEtablissement:
+    remboursements = db.query(RemboursementDB).filter(RemboursementDB.versement_etablissement_id == v.id).all()
+    client_ids = {r.dette.client_id for r in remboursements if r.dette.client_id}
+    noms = [c.nom for c in db.query(ClientDB).filter(ClientDB.id.in_(client_ids)).all()] if client_ids else []
+    return VersementEtablissement(
+        id=v.id, etablissement_id=v.etablissement_id, etablissement_nom=etablissement_nom, montant=v.montant,
+        date=v.date, reference=v.reference, justificatif_url=v.justificatif_url, note=v.note,
+        beneficiaires_regles=noms,
+    )
 
 
 @router.get("/dashboard", response_model=list[SuiviEtablissement])
@@ -46,6 +59,23 @@ def dashboard(
     return resultat
 
 
+@router.get("/etablissements/{etablissement_id}/dettes-en-cours", response_model=list[LigneDette])
+def dettes_en_cours_etablissement(
+    etablissement_id: str,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> list[LigneDette]:
+    """Dettes non soldées des bénéficiaires de cet établissement — pour choisir, au moment
+    d'enregistrer un versement groupé, exactement quels bénéficiaires il couvre plutôt que de
+    se contenter d'un montant agrégé sans traçabilité individuelle."""
+    require_permission(db, current_user, BENEFICIAIRE_GESTION)
+    client_ids = [b.client_id for b in db.query(BeneficiaireDB).filter(BeneficiaireDB.etablissement_id == etablissement_id).all()]
+    if not client_ids:
+        return []
+    dettes = db.query(DetteDB).filter(DetteDB.client_id.in_(client_ids), DetteDB.statut != StatutDette.soldee).all()
+    return [_to_ligne(d) for d in dettes]
+
+
 @router.get("/versements", response_model=list[VersementEtablissement])
 def list_versements(
     etablissement_id: str | None = None,
@@ -58,10 +88,7 @@ def list_versements(
         query = query.filter(VersementEtablissementDB.etablissement_id == etablissement_id)
     etablissements_by_id = {e.id: e.nom for e in db.query(EtablissementDB).all()}
     return [
-        VersementEtablissement(
-            id=v.id, etablissement_id=v.etablissement_id, etablissement_nom=etablissements_by_id.get(v.etablissement_id, v.etablissement_id),
-            montant=v.montant, date=v.date, reference=v.reference, justificatif_url=v.justificatif_url, note=v.note,
-        )
+        _to_versement(db, v, etablissements_by_id.get(v.etablissement_id, v.etablissement_id))
         for v in query.all()
     ]
 
@@ -77,14 +104,34 @@ def create_versement(
     if not etablissement:
         raise HTTPException(status_code=404, detail="Établissement introuvable")
     auteur = f"{current_user.prenom} {current_user.nom}"
-    v = VersementEtablissementDB(id=str(uuid.uuid4())[:8], created_by=auteur, updated_by=auteur, **payload.model_dump())
+
+    client_ids_etablissement = {b.client_id for b in db.query(BeneficiaireDB).filter(BeneficiaireDB.etablissement_id == payload.etablissement_id).all()}
+    dettes_a_solder = []
+    for dette_id in payload.dette_ids:
+        dette = db.get(DetteDB, dette_id)
+        if not dette:
+            raise HTTPException(status_code=404, detail=f"Dette {dette_id} introuvable")
+        if dette.client_id not in client_ids_etablissement:
+            raise HTTPException(status_code=400, detail=f"La dette {dette_id} n'appartient pas à un bénéficiaire de cet établissement")
+        if dette.statut == StatutDette.soldee:
+            raise HTTPException(status_code=400, detail=f"La dette {dette_id} est déjà soldée")
+        dettes_a_solder.append(dette)
+
+    v = VersementEtablissementDB(
+        id=str(uuid.uuid4())[:8], created_by=auteur, updated_by=auteur,
+        **payload.model_dump(exclude={"dette_ids"}),
+    )
     db.add(v)
+
+    for dette in dettes_a_solder:
+        regler_dette_beneficiaire(
+            db, dette, dette.solde_restant, ModePaiement.virement, payload.date, etablissement.nom, auteur,
+            versement_etablissement_id=v.id,
+        )
+
     db.commit()
     db.refresh(v)
-    return VersementEtablissement(
-        id=v.id, etablissement_id=v.etablissement_id, etablissement_nom=etablissement.nom, montant=v.montant,
-        date=v.date, reference=v.reference, justificatif_url=v.justificatif_url, note=v.note,
-    )
+    return _to_versement(db, v, etablissement.nom)
 
 
 @router.post("/versements/{versement_id}/justificatif", response_model=VersementEtablissement)
@@ -113,7 +160,4 @@ def uploader_justificatif_versement(
     db.commit()
     db.refresh(v)
     etablissement = db.get(EtablissementDB, v.etablissement_id)
-    return VersementEtablissement(
-        id=v.id, etablissement_id=v.etablissement_id, etablissement_nom=etablissement.nom if etablissement else v.etablissement_id,
-        montant=v.montant, date=v.date, reference=v.reference, justificatif_url=v.justificatif_url, note=v.note,
-    )
+    return _to_versement(db, v, etablissement.nom if etablissement else v.etablissement_id)

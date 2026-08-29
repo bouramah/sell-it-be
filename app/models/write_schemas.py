@@ -570,6 +570,7 @@ class VersementEtablissementCreate(BaseModel):
     date: date
     reference: str | None = None
     note: str | None = None
+    dette_ids: list[str] = []
 
 
 class NotifierRemboursementRequest(BaseModel):

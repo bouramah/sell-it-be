@@ -455,6 +455,12 @@ class RemboursementDB(AuditMixin, Base):
     mode_paiement: Mapped[ModePaiement] = mapped_column(Enum(ModePaiement))
     date: Mapped[date] = mapped_column(Date)
     operateur: Mapped[str] = mapped_column(String(120))
+    # Renseigné uniquement quand ce remboursement provient du rapprochement d'un versement groupé
+    # d'établissement (Aide Humanitaire) plutôt que d'un encaissement en boutique — permet de
+    # retrouver, pour un versement donné, exactement quels bénéficiaires il a soldés.
+    versement_etablissement_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("versements_etablissements.id", ondelete="SET NULL"), nullable=True,
+    )
 
     dette: Mapped["DetteDB"] = relationship(back_populates="remboursements")
 

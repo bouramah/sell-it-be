@@ -3,13 +3,14 @@ validité — même principe que app/services/pricing.py (prix par période) : u
 etablissement_id=None fait référence réseau ; une ligne etablissement_id=X la surcharge pour cet
 établissement si elle couvre la date. Le backend reste la seule source de vérité, jamais confiance
 dans un calcul fait côté client."""
+import uuid
 from datetime import date
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.db_models.models import BaremeCreditBeneficiaireDB, BeneficiaireDB, DetteDB
-from app.models.schemas import StatutDette
+from app.db_models.models import BaremeCreditBeneficiaireDB, BeneficiaireDB, DetteDB, RemboursementDB
+from app.models.schemas import ModePaiement, StatutDette
 
 
 def plafond_effectif_a_date(db: Session, etablissement_id: str, poste: str, a_date: date) -> float | None:
@@ -80,3 +81,40 @@ def plafond_disponible(db: Session, beneficiaire: BeneficiaireDB, a_date: date |
     )
     engage = sum(d.solde_restant for d in encours)
     return max(0.0, plafond - engage)
+
+
+def regler_dette_beneficiaire(
+    db: Session, dette: DetteDB, montant: float, mode_paiement: ModePaiement, date_paiement: date, operateur: str,
+    auteur: str, caisse_id: str | None = None, versement_etablissement_id: str | None = None,
+) -> RemboursementDB:
+    """Solde (totalement ou partiellement) une dette de bénéficiaire et lève la suspension du
+    plafond si plus aucune autre dette de ce client n'est en retard — logique partagée entre
+    l'encaissement en boutique (dettes.py, avec mouvement de caisse) et le rapprochement d'un
+    versement groupé d'établissement (aide_humanitaire.py, sans caisse : l'argent arrive par
+    virement au siège, pas dans une caisse boutique). `operateur` est la personne qui a
+    physiquement traité le paiement (saisie libre) ; `auteur` est l'utilisateur KFSTORE
+    authentifié qui enregistre l'opération (audit created_by/updated_by) — pas nécessairement
+    la même personne."""
+    r = RemboursementDB(
+        id=str(uuid.uuid4())[:8], dette_id=dette.id, caisse_id=caisse_id, montant=montant,
+        mode_paiement=mode_paiement, date=date_paiement, operateur=operateur,
+        versement_etablissement_id=versement_etablissement_id,
+        created_by=auteur, updated_by=auteur,
+    )
+    db.add(r)
+
+    dette.solde_restant -= montant
+    dette.statut = StatutDette.soldee if dette.solde_restant <= 0 else StatutDette.en_cours
+    dette.updated_by = auteur
+
+    if dette.statut == StatutDette.soldee and dette.client_id:
+        beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == dette.client_id).first()
+        if beneficiaire and beneficiaire.plafond_suspendu:
+            autres_en_retard = db.query(DetteDB).filter(
+                DetteDB.client_id == dette.client_id, DetteDB.id != dette.id, DetteDB.statut == StatutDette.en_retard,
+            ).first()
+            if not autres_en_retard:
+                beneficiaire.plafond_suspendu = False
+                beneficiaire.updated_by = auteur
+
+    return r
