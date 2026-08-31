@@ -260,7 +260,10 @@ def list_validations_garant(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> list[ValidationGarantCredit]:
     """Statut des validations garant (référent/comptabilité) pour une demande de crédit
-    Aide Humanitaire — lecture seule côté staff, la décision reste au garant via son jeton SMS."""
+    Aide Humanitaire — lecture seule côté staff, la décision revient normalement au garant via
+    son jeton SMS ; un administrateur peut exceptionnellement trancher à sa place (cf.
+    /validation-garant/admin/{id}/decision, SECOURS_SMS_GESTION), auquel cas `validee_par`
+    identifie qui a répondu."""
     d = db.get(DemandeCreditDB, demande_id)
     if not d:
         raise HTTPException(status_code=404, detail="Demande introuvable")
@@ -270,6 +273,7 @@ def list_validations_garant(
         ValidationGarantCredit(
             id=v.id, type_garant=v.type_garant, nom_garant=v.nom_garant, statut=v.statut,
             date_reponse=v.date_reponse, motif_refus=v.motif_refus,
+            validee_manuellement=v.validee_manuellement, validee_par=v.updated_by if v.validee_manuellement else None,
         )
         for v in validations
     ]

@@ -23,6 +23,7 @@ from app.routers import (
     catalogue,
     client_auth,
     clients,
+    codes_sms,
     commandes,
     comptabilite,
     dashboard,
@@ -71,6 +72,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 app.include_router(auth.router)
 app.include_router(client_auth.router)
+app.include_router(codes_sms.router)
 app.include_router(catalogue.router)
 app.include_router(mes_commandes.router)
 app.include_router(mon_credit.router)

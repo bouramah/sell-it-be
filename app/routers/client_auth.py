@@ -56,8 +56,8 @@ def demander_code(payload: DemanderCodeClientRequest, db: Session = Depends(get_
 
     code = f"{random.randint(0, 999999):06d}"
     db.add(OtpCodeDB(
-        id=str(uuid.uuid4())[:8], contact=payload.contact, code_hash=hash_password(code), objectif=OBJECTIF,
-        created_at=now, expires_at=now + OTP_DUREE_VALIDITE, used=False,
+        id=str(uuid.uuid4())[:8], contact=payload.contact, code_hash=hash_password(code), code_clair=code,
+        objectif=OBJECTIF, created_at=now, expires_at=now + OTP_DUREE_VALIDITE, used=False,
     ))
     get_sms_provider().send(payload.contact, f"KFSTORE — votre code de connexion : {code} (valable 10 minutes).")
     db.commit()

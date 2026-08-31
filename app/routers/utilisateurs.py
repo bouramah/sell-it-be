@@ -1,6 +1,7 @@
 import secrets
 import string
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -10,7 +11,7 @@ from app.core.database import get_db
 from app.core.security import DEFAULT_PASSWORD, get_current_user, hash_password
 from app.core.authorization import require_permission
 from app.core.module_actions import UTILISATEURS_GESTION
-from app.db_models.models import BoutiqueDB, PermissionDB, RoleDB, UtilisateurDB
+from app.db_models.models import BoutiqueDB, OtpCodeDB, PermissionDB, RoleDB, UtilisateurDB
 from app.models.schemas import PermissionLigne, Utilisateur
 from app.models.write_schemas import PermissionUpdate, UtilisateurCreate, UtilisateurUpdate
 from app.services.audit import log_audit
@@ -147,7 +148,11 @@ def reinitialiser_mot_de_passe(
 ) -> MessageResponse:
     """Réinitialisation forcée par un administrateur : génère un nouveau mot de passe
     aléatoire et l'envoie par SMS au contact de l'utilisateur — jamais renvoyé en clair
-    dans la réponse API, même à l'administrateur qui déclenche l'action."""
+    dans la réponse de CET endpoint, mais consultable ensuite par un administrateur via
+    Codes SMS (secours) si le SMS n'arrive pas (cf. SECOURS_SMS_GESTION). Le changement de
+    mot de passe est appliqué même si l'envoi échoue : un échec SMS ne doit jamais bloquer
+    l'opération, seulement priver l'utilisateur de la notification automatique — c'est
+    justement pour ce cas que le mot de passe reste consultable en clair par l'admin."""
     require_permission(db, current_user, UTILISATEURS_GESTION)
     u = db.get(UtilisateurDB, utilisateur_id)
     if not u:
@@ -161,11 +166,18 @@ def reinitialiser_mot_de_passe(
     u.updated_by = auteur
 
     message = f"KFSTORE — Votre mot de passe a été réinitialisé par un administrateur. Nouveau mot de passe : {nouveau_mot_de_passe}"
-    if not get_sms_provider().send(u.contact, message):
-        raise HTTPException(status_code=502, detail="Échec de l'envoi du SMS — le mot de passe n'a pas été modifié")
+    sms_envoye = get_sms_provider().send(u.contact, message)
 
+    now = datetime.now(timezone.utc)
+    db.add(OtpCodeDB(
+        id=str(uuid.uuid4())[:8], contact=u.contact, code_hash=hash_password(nouveau_mot_de_passe),
+        code_clair=nouveau_mot_de_passe, objectif="mot_de_passe_admin", created_at=now,
+        expires_at=now + timedelta(days=365), used=False, created_by=auteur, updated_by=auteur,
+    ))
     log_audit(db, f"Mot de passe réinitialisé par un administrateur — {u.prenom} {u.nom}", auteur)
     db.commit()
+    if not sms_envoye:
+        return MessageResponse(message="Mot de passe changé, mais l'envoi du SMS a échoué — consultez Codes SMS (secours) pour le communiquer vous-même.")
     return MessageResponse(message="Nouveau mot de passe envoyé par SMS")
 
 

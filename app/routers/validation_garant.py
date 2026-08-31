@@ -1,18 +1,18 @@
 """Validation d'une demande de crédit Aide Humanitaire par ses garants — endpoints publics
 (aucune authentification KFSTORE) : le jeton unique envoyé par SMS EST l'authentification, cf.
-app/services/validation_garant.py pour la création des jetons et l'envoi des SMS."""
-import uuid
-from datetime import date, timedelta
-
+app/services/validation_garant.py pour la création des jetons et l'envoi des SMS. La route
+/admin/{id}/decision, elle, est authentifiée et réservée à l'administrateur — secours quand le
+SMS n'est jamais arrivé au garant (cf. SECOURS_SMS_GESTION)."""
 from sqlalchemy.orm import Session
 
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.authorization import require_permission
 from app.core.database import get_db
-from app.db_models.models import BeneficiaireDB, DemandeCreditDB, DetteDB, ValidationGarantCreditDB
-from app.models.schemas import StatutDemandeCredit, StatutDette, StatutValidationGarant, TiersType, TypeGarant, ValidationGarantDecision, ValidationGarantDetail
-from app.services.audit import log_audit
-from app.services.notifications import notifier_client
-from app.services.validation_garant import now_naive
+from app.core.module_actions import SECOURS_SMS_GESTION
+from app.core.security import get_current_user
+from app.db_models.models import BeneficiaireDB, DemandeCreditDB, UtilisateurDB, ValidationGarantCreditDB
+from app.models.schemas import StatutValidationGarant, TypeGarant, ValidationGarantDecision, ValidationGarantDetail
+from app.services.validation_garant import appliquer_decision_garant, now_naive
 
 router = APIRouter(prefix="/api/v1/validation-garant", tags=["validation-garant"])
 
@@ -53,45 +53,40 @@ def consulter(token: str, db: Session = Depends(get_db)) -> ValidationGarantDeta
 @router.post("/{token}", response_model=ValidationGarantDetail)
 def repondre(token: str, payload: ValidationGarantDecision, db: Session = Depends(get_db)) -> ValidationGarantDetail:
     v = _charger(db, token)
-    if v.statut != StatutValidationGarant.en_attente:
-        raise HTTPException(status_code=400, detail="Cette demande a déjà reçu votre réponse")
-    if not payload.approuve and not payload.motif_refus:
-        raise HTTPException(status_code=400, detail="Un motif est requis en cas de refus")
+    demande = db.get(DemandeCreditDB, v.demande_credit_id)
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
+    auteur = f"Garant {v.type_garant.value} — {beneficiaire.etablissement.nom}"
+    try:
+        appliquer_decision_garant(db, v, payload.approuve, payload.motif_refus, auteur)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    v.statut = StatutValidationGarant.validee if payload.approuve else StatutValidationGarant.refusee
-    v.date_reponse = now_naive()
-    v.motif_refus = payload.motif_refus if not payload.approuve else None
+    db.commit()
+    db.refresh(v)
+    return _detail(db, v)
+
+
+@router.post("/admin/{validation_id}/decision", response_model=ValidationGarantDetail)
+def repondre_admin(
+    validation_id: str, payload: ValidationGarantDecision,
+    db: Session = Depends(get_db), current_user: UtilisateurDB = Depends(get_current_user),
+) -> ValidationGarantDetail:
+    """Saisie manuelle par un administrateur à la place d'un garant injoignable (SMS jamais
+    reçu) — la ligne reste tracée comme `validee_manuellement`, et `updated_by` porte le nom
+    de l'administrateur, pas celui du garant (cf. SECOURS_SMS_GESTION)."""
+    require_permission(db, current_user, SECOURS_SMS_GESTION)
+    v = db.get(ValidationGarantCreditDB, validation_id)
+    if not v:
+        raise HTTPException(status_code=404, detail="Validation introuvable")
 
     demande = db.get(DemandeCreditDB, v.demande_credit_id)
     beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
-    toutes = db.query(ValidationGarantCreditDB).filter(ValidationGarantCreditDB.demande_credit_id == demande.id).all()
-    auteur = f"Garant {v.type_garant.value} — {beneficiaire.etablissement.nom}"
-
-    if any(a.statut == StatutValidationGarant.refusee for a in toutes):
-        demande.statut = StatutDemandeCredit.refusee
-        demande.updated_by = auteur
-        log_audit(db, f"Demande de crédit Aide Humanitaire refusée par un garant — {beneficiaire.client.nom}", auteur, demande.boutique_id)
-        notifier_client(
-            db, beneficiaire.client.nom,
-            f"KFSTORE — Votre demande de crédit alimentaire de {demande.montant_souhaite:,.0f} GNF a été refusée "
-            f"par un de vos garants.".replace(",", " "),
-        )
-    elif all(a.statut == StatutValidationGarant.validee for a in toutes):
-        demande.statut = StatutDemandeCredit.validee
-        demande.updated_by = auteur
-        dette = DetteDB(
-            id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=beneficiaire.client.nom, client_id=beneficiaire.client_id,
-            boutique_id=demande.boutique_id, montant_initial=demande.montant_souhaite, solde_restant=demande.montant_souhaite,
-            echeance=date.today() + timedelta(days=30), statut=StatutDette.en_cours, demande_credit_id=demande.id,
-            created_by=auteur, updated_by=auteur,
-        )
-        db.add(dette)
-        log_audit(db, f"Crédit Aide Humanitaire activé (2 garants validés) — {beneficiaire.client.nom} ({demande.montant_souhaite:,.0f} GNF)".replace(",", " "), auteur, demande.boutique_id)
-        notifier_client(
-            db, beneficiaire.client.nom,
-            f"KFSTORE — Votre crédit alimentaire de {demande.montant_souhaite:,.0f} GNF est activé, vous pouvez "
-            f"retirer vos denrées en boutique. Remboursement à échéance du {dette.echeance.strftime('%d/%m/%Y')}.".replace(",", " "),
-        )
+    nom_admin = f"{current_user.prenom} {current_user.nom}"
+    auteur = f"{nom_admin} (validation manuelle admin, SMS indisponible) — au nom du garant {v.type_garant.value}"
+    try:
+        appliquer_decision_garant(db, v, payload.approuve, payload.motif_refus, auteur, updated_by=nom_admin, manuel=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     db.commit()
     db.refresh(v)

@@ -598,6 +598,8 @@ class ValidationGarantCredit(BaseModel):
     statut: StatutValidationGarant
     date_reponse: datetime | None = None
     motif_refus: str | None = None
+    validee_manuellement: bool = False
+    validee_par: str | None = None
 
 
 class ValidationGarantDetail(BaseModel):

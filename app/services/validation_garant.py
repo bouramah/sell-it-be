@@ -7,14 +7,16 @@ qui se présente en boutique (beneficiaires.py)."""
 import logging
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.db_models.models import BeneficiaireDB, DemandeCreditDB, EtablissementDB, ValidationGarantCreditDB
-from app.models.schemas import StatutDemandeCredit, TypeGarant
+from app.db_models.models import BeneficiaireDB, DemandeCreditDB, DetteDB, EtablissementDB, ValidationGarantCreditDB
+from app.models.schemas import StatutDemandeCredit, StatutDette, StatutValidationGarant, TiersType, TypeGarant
+from app.services.audit import log_audit
 from app.services.bareme_credit import plafond_disponible
+from app.services.notifications import notifier_client
 from app.services.sms import get_sms_provider
 
 logger = logging.getLogger("kfstore.validation_garant")
@@ -80,3 +82,58 @@ def _creer_validations_garant(db: Session, demande: DemandeCreditDB, beneficiair
         )
         if not get_sms_provider().send(contact, message):
             logger.warning("Échec envoi SMS validation garant (%s) à %s", type_garant.value, contact)
+
+
+def appliquer_decision_garant(
+    db: Session, v: ValidationGarantCreditDB, approuve: bool, motif_refus: str | None, auteur_label: str,
+    updated_by: str | None = None, manuel: bool = False,
+) -> None:
+    """Enregistre la décision d'un garant (validation/refus) et, si les deux garants ont
+    tranché, active ou refuse la demande de crédit — logique partagée entre la réponse du
+    garant lui-même via son jeton SMS (validation_garant.py::repondre, public) et la saisie
+    manuelle par un administrateur quand le SMS n'est jamais arrivé (route authentifiée
+    /validation-garant/admin/{id}/decision, cf. SECOURS_SMS_GESTION). `auteur_label` alimente
+    created_by/updated_by de la dette et le journal d'audit ; `updated_by`, s'il est fourni,
+    est en plus posé sur la ligne de validation elle-même pour tracer qui a répondu à la
+    place du garant."""
+    if v.statut != StatutValidationGarant.en_attente:
+        raise ValueError("Cette demande a déjà reçu une réponse pour ce garant")
+    if not approuve and not motif_refus:
+        raise ValueError("Un motif est requis en cas de refus")
+
+    v.statut = StatutValidationGarant.validee if approuve else StatutValidationGarant.refusee
+    v.date_reponse = now_naive()
+    v.motif_refus = motif_refus if not approuve else None
+    v.validee_manuellement = manuel
+    if updated_by:
+        v.updated_by = updated_by
+
+    demande = db.get(DemandeCreditDB, v.demande_credit_id)
+    beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
+    toutes = db.query(ValidationGarantCreditDB).filter(ValidationGarantCreditDB.demande_credit_id == demande.id).all()
+
+    if any(a.statut == StatutValidationGarant.refusee for a in toutes):
+        demande.statut = StatutDemandeCredit.refusee
+        demande.updated_by = auteur_label
+        log_audit(db, f"Demande de crédit Aide Humanitaire refusée par un garant — {beneficiaire.client.nom}", auteur_label, demande.boutique_id)
+        notifier_client(
+            db, beneficiaire.client.nom,
+            f"KFSTORE — Votre demande de crédit alimentaire de {demande.montant_souhaite:,.0f} GNF a été refusée "
+            f"par un de vos garants.".replace(",", " "),
+        )
+    elif all(a.statut == StatutValidationGarant.validee for a in toutes):
+        demande.statut = StatutDemandeCredit.validee
+        demande.updated_by = auteur_label
+        dette = DetteDB(
+            id=str(uuid.uuid4())[:8], tiers_type=TiersType.client, tiers_nom=beneficiaire.client.nom, client_id=beneficiaire.client_id,
+            boutique_id=demande.boutique_id, montant_initial=demande.montant_souhaite, solde_restant=demande.montant_souhaite,
+            echeance=date.today() + timedelta(days=30), statut=StatutDette.en_cours, demande_credit_id=demande.id,
+            created_by=auteur_label, updated_by=auteur_label,
+        )
+        db.add(dette)
+        log_audit(db, f"Crédit Aide Humanitaire activé (2 garants validés) — {beneficiaire.client.nom} ({demande.montant_souhaite:,.0f} GNF)".replace(",", " "), auteur_label, demande.boutique_id)
+        notifier_client(
+            db, beneficiaire.client.nom,
+            f"KFSTORE — Votre crédit alimentaire de {demande.montant_souhaite:,.0f} GNF est activé, vous pouvez "
+            f"retirer vos denrées en boutique. Remboursement à échéance du {dette.echeance.strftime('%d/%m/%Y')}.".replace(",", " "),
+        )

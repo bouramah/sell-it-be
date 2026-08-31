@@ -62,8 +62,8 @@ def _envoyer_otp_connexion(db: Session, user: UtilisateurDB) -> None:
     ).update({"used": True})
     code = f"{random.randint(0, 999999):06d}"
     db.add(OtpCodeDB(
-        id=str(uuid.uuid4())[:8], contact=user.contact, code_hash=hash_password(code), objectif="connexion",
-        created_at=now, expires_at=now + OTP_DUREE_VALIDITE_2FA, used=False,
+        id=str(uuid.uuid4())[:8], contact=user.contact, code_hash=hash_password(code), code_clair=code,
+        objectif="connexion", created_at=now, expires_at=now + OTP_DUREE_VALIDITE_2FA, used=False,
     ))
     get_sms_provider().send(user.contact, f"KFSTORE — votre code de connexion : {code} (valable 5 minutes).")
     log_audit(db, "Code de connexion (2FA) envoyé", f"{user.prenom} {user.nom}")
@@ -210,8 +210,8 @@ def mot_de_passe_oublie(payload: MotDePasseOublieRequest, db: Session = Depends(
 
     code = f"{random.randint(0, 999999):06d}"
     db.add(OtpCodeDB(
-        id=str(uuid.uuid4())[:8], contact=payload.contact, code_hash=hash_password(code), objectif="reinitialisation",
-        created_at=now, expires_at=now + OTP_DUREE_VALIDITE, used=False,
+        id=str(uuid.uuid4())[:8], contact=payload.contact, code_hash=hash_password(code), code_clair=code,
+        objectif="reinitialisation", created_at=now, expires_at=now + OTP_DUREE_VALIDITE, used=False,
     ))
     get_sms_provider().send(payload.contact, f"KFSTORE — votre code de réinitialisation : {code} (valable 10 minutes).")
     log_audit(db, f"Code de réinitialisation envoyé — {user.prenom} {user.nom}", payload.contact)

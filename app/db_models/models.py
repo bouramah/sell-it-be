@@ -554,6 +554,9 @@ class ValidationGarantCreditDB(AuditMixin, Base):
     date_reponse: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     motif_refus: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expire_le: Mapped[datetime] = mapped_column(DateTime)
+    # Vrai si un administrateur a tranché à la place du garant (SMS indisponible) — cf.
+    # SECOURS_SMS_GESTION. `updated_by` (AuditMixin) porte alors le nom de cet administrateur.
+    validee_manuellement: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
 
 class VersementEtablissementDB(AuditMixin, Base):
@@ -761,6 +764,10 @@ class OtpCodeDB(AuditMixin, Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     contact: Mapped[str] = mapped_column(String(30))
     code_hash: Mapped[str] = mapped_column(String(255))
+    # Miroir en clair du code/mot de passe envoyé — secours pour l'administrateur quand le
+    # fournisseur SMS échoue (le contact n'a jamais reçu le message) : lui seul peut consulter
+    # cette valeur (cf. SECOURS_SMS_GESTION) pour la communiquer par un autre canal.
+    code_clair: Mapped[str | None] = mapped_column(String(64), nullable=True)
     objectif: Mapped[str] = mapped_column(String(20), default="reinitialisation")
     created_at: Mapped[datetime] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
