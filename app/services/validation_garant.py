@@ -95,7 +95,14 @@ def appliquer_decision_garant(
     /validation-garant/admin/{id}/decision, cf. SECOURS_SMS_GESTION). `auteur_label` alimente
     created_by/updated_by de la dette et le journal d'audit ; `updated_by`, s'il est fourni,
     est en plus posé sur la ligne de validation elle-même pour tracer qui a répondu à la
-    place du garant."""
+    place du garant. Verrouille la demande (SELECT ... FOR UPDATE) le temps de la décision :
+    deux garants qui répondent au même instant, ou un double clic sur la validation manuelle
+    pendant que l'envoi SMS traîne, ne doivent jamais aboutir à deux dettes pour une même
+    demande — cf. incident constaté en production où une demande à 2 garants avait créé 2
+    DetteDB de 500 000 GNF au lieu d'une seule."""
+    demande = db.query(DemandeCreditDB).filter(DemandeCreditDB.id == v.demande_credit_id).with_for_update().one()
+    db.refresh(v, with_for_update=True)
+
     if v.statut != StatutValidationGarant.en_attente:
         raise ValueError("Cette demande a déjà reçu une réponse pour ce garant")
     if not approuve and not motif_refus:
@@ -108,7 +115,6 @@ def appliquer_decision_garant(
     if updated_by:
         v.updated_by = updated_by
 
-    demande = db.get(DemandeCreditDB, v.demande_credit_id)
     beneficiaire = db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == demande.client_id).first()
     toutes = db.query(ValidationGarantCreditDB).filter(ValidationGarantCreditDB.demande_credit_id == demande.id).all()
 
