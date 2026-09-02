@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.database import get_db
 from app.core.security import create_client_token, get_current_client, hash_password, verify_password
-from app.db_models.models import ClientDB, OtpCodeDB
-from app.models.schemas import Client, SegmentClient
+from app.db_models.models import ClientDB, DetteDB, OtpCodeDB
+from app.models.schemas import Client, SegmentClient, StatutDette
 from app.models.write_schemas import (
     ClientProfilUpdate,
     ClientTokenResponse,
@@ -35,6 +35,13 @@ router = APIRouter(prefix="/api/v1/client-auth", tags=["client-auth"])
 OTP_DUREE_VALIDITE = timedelta(minutes=10)
 OTP_DELAI_RENVOI = timedelta(seconds=60)
 OBJECTIF = "connexion_client"
+
+# Compte de démonstration pour la review App Store / Play Store : le code de connexion y est
+# toujours "123456" au lieu d'être tiré aléatoirement, pour ne jamais dépendre de la remise
+# effective d'un SMS (le reviewer ne reçoit jamais de SMS de test) — cf. guideline App Store
+# 2.1 "l'app doit rester testable". Communiqué tel quel dans les notes App Review.
+DEMO_CONTACT = "699000000"
+DEMO_CODE = "123456"
 
 
 class MessageResponse(BaseModel):
@@ -54,12 +61,14 @@ def demander_code(payload: DemanderCodeClientRequest, db: Session = Depends(get_
 
     db.query(OtpCodeDB).filter(OtpCodeDB.contact == payload.contact, OtpCodeDB.objectif == OBJECTIF, OtpCodeDB.used.is_(False)).update({"used": True})
 
-    code = f"{random.randint(0, 999999):06d}"
+    demo = payload.contact == DEMO_CONTACT
+    code = DEMO_CODE if demo else f"{random.randint(0, 999999):06d}"
     db.add(OtpCodeDB(
         id=str(uuid.uuid4())[:8], contact=payload.contact, code_hash=hash_password(code), code_clair=code,
         objectif=OBJECTIF, created_at=now, expires_at=now + OTP_DUREE_VALIDITE, used=False,
     ))
-    get_sms_provider().send(payload.contact, f"KFSTORE — votre code de connexion : {code} (valable 10 minutes).")
+    if not demo:
+        get_sms_provider().send(payload.contact, f"KFSTORE — votre code de connexion : {code} (valable 10 minutes).")
     db.commit()
     return MessageResponse(message="Code envoyé par SMS.")
 
@@ -121,3 +130,30 @@ def modifier_profil(
     db.commit()
     db.refresh(client)
     return _to_schema(client, db)
+
+
+@router.delete("/moi", response_model=MessageResponse)
+def supprimer_compte(client: ClientDB = Depends(get_current_client), db: Session = Depends(get_db)) -> MessageResponse:
+    """Suppression de compte self-service (obligatoire pour la review App Store / Play Store dès
+    qu'une appli permet l'auto-inscription — cf. guideline 5.1.1(v)). L'historique de commandes
+    et de crédit reste rattaché au client_id (nécessaire à la comptabilité de la boutique et,
+    pour une créance en cours, au suivi du remboursement) — on anonymise nom et contact plutôt
+    que de supprimer la ligne, à l'image de ce que font banques/télécoms pour un compte encore
+    engagé financièrement."""
+    dette_en_cours = (
+        db.query(DetteDB)
+        .filter(DetteDB.client_id == client.id, DetteDB.statut != StatutDette.soldee)
+        .first()
+    )
+    if dette_en_cours:
+        raise HTTPException(
+            status_code=400,
+            detail="Vous avez une créance en cours. Réglez-la auprès de votre boutique avant de supprimer votre compte.",
+        )
+    log_audit(db, f"Client a supprimé son compte — {client.nom} ({client.contact})", client.nom)
+    client.nom = "Compte supprimé"
+    client.contact = f"supprime-{client.id}"
+    client.credit_autorise = False
+    client.updated_by = "Suppression — self-service appli mobile"
+    db.commit()
+    return MessageResponse(message="Votre compte a été supprimé.")

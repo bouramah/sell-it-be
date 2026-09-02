@@ -20,6 +20,7 @@ from app.models.write_schemas import (
     Verifier2FARequest,
 )
 from app.services.audit import log_audit
+from app.services.notifications import notifier_administrateurs
 from app.services.securite import parametre_actif
 from app.services.sms import get_sms_provider
 
@@ -182,6 +183,26 @@ def changer_mot_de_passe(
     log_audit(db, "Mot de passe modifié", f"{current_user.prenom} {current_user.nom}")
     db.commit()
     return MessageResponse(message="Mot de passe modifié")
+
+
+@router.post("/moi/demander-suppression", response_model=MessageResponse)
+def demander_suppression_compte(
+    db: Session = Depends(get_db), current_user: UtilisateurDB = Depends(get_current_user),
+) -> MessageResponse:
+    """Demande de suppression de compte (guideline App Store 5.1.1(v)) — un compte du personnel
+    est créé et géré par un administrateur (cf. Utilisateurs, back-office), jamais auto-inscrit ;
+    sa suppression relève donc d'une décision RH/admin plutôt que d'un self-service instantané
+    comme sur l'appli client. On trace la demande et on notifie les administrateurs plutôt que
+    de couper l'accès immédiatement, pour ne pas interrompre une caisse ou une tournée en cours."""
+    nom_complet = f"{current_user.prenom} {current_user.nom}"
+    log_audit(db, f"{nom_complet} a demandé la suppression de son compte", nom_complet)
+    notifier_administrateurs(
+        db, f"{nom_complet} ({current_user.contact}) a demandé la suppression de son compte KFSTORE Agent. "
+        "Vérifiez et désactivez le compte depuis Utilisateurs & droits si la demande est légitime.",
+        titre="Demande de suppression de compte",
+    )
+    db.commit()
+    return MessageResponse(message="Votre demande a été transmise à l'administrateur. Votre compte sera désactivé après vérification.")
 
 
 @router.post("/mot-de-passe-oublie", response_model=MessageResponse)

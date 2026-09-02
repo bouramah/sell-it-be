@@ -66,6 +66,13 @@ def notifier_gerants_boutique(db: Session, boutique_id: str, message: str, titre
         _push(g, titre, message)
 
 
+def notifier_administrateurs(db: Session, message: str, titre: str = "KFSTORE") -> None:
+    admins = db.query(UtilisateurDB).filter(UtilisateurDB.role == "administrateur", UtilisateurDB.statut == "actif").all()
+    for a in admins:
+        _send(a.contact, message)
+        _push(a, titre, message)
+
+
 def nom_boutique(db: Session, boutique_id: str) -> str:
     b = db.get(BoutiqueDB, boutique_id)
     return b.nom if b else boutique_id
