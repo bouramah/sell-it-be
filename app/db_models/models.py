@@ -272,6 +272,9 @@ class SecteurGeoDB(AuditMixin, Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     nom: Mapped[str] = mapped_column(String(120))
     quartier_id: Mapped[str] = mapped_column(String(40), ForeignKey("quartiers_geo.id", ondelete="CASCADE"))
+    # Chef secteur identifié (facultatif) — cf. note technique "Obligation de renseigner le
+    # secteur" : agit comme garant de référence pour le module Aide Humanitaire.
+    chef_secteur_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("utilisateurs.id", ondelete="SET NULL"), nullable=True)
 
 
 class ClientDB(AuditMixin, Base):
@@ -495,8 +498,10 @@ class EtablissementDB(AuditMixin, Base):
     adresse: Mapped[str | None] = mapped_column(String(255), nullable=True)
     referent_nom: Mapped[str] = mapped_column(String(160))
     referent_contact: Mapped[str] = mapped_column(String(40))
+    referent_secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
     comptabilite_nom: Mapped[str] = mapped_column(String(160))
     comptabilite_contact: Mapped[str] = mapped_column(String(40))
+    comptabilite_secteur_geo_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("secteurs_geo.id", ondelete="SET NULL"), nullable=True)
     statut: Mapped[StatutEtablissement] = mapped_column(Enum(StatutEtablissement), default=StatutEtablissement.active)
 
 

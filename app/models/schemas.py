@@ -557,8 +557,10 @@ class Etablissement(BaseModel):
     adresse: str | None = None
     referent_nom: str
     referent_contact: str
+    referent_secteur_geo_id: str | None = None
     comptabilite_nom: str
     comptabilite_contact: str
+    comptabilite_secteur_geo_id: str | None = None
     statut: StatutEtablissement
 
 
@@ -579,6 +581,10 @@ class Beneficiaire(BaseModel):
     plafond_suspendu: bool
     plafond_disponible: float
     credit_autorise: bool
+    # True si le secteur du bénéficiaire diffère de celui du référent ET de la comptabilité de
+    # l'établissement (ou que l'un des trois secteurs manque) — signal d'incohérence géographique
+    # à vérifier avant validation du crédit, cf. Note_Secteur_Obligatoire_KFSTORE.pdf §4.
+    secteur_incoherent: bool = False
 
 
 class BaremeCreditBeneficiaire(BaseModel):

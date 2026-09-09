@@ -32,6 +32,8 @@ def create_etablissement(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> EtablissementDB:
     require_permission(db, current_user, ETABLISSEMENT_GESTION)
+    if not payload.referent_secteur_geo_id or not payload.comptabilite_secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur du référent et de la comptabilité sont obligatoires.")
     auteur = f"{current_user.prenom} {current_user.nom}"
     e = EtablissementDB(id=str(uuid.uuid4())[:8], created_by=auteur, updated_by=auteur, **payload.model_dump())
     db.add(e)

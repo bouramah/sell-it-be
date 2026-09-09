@@ -523,8 +523,10 @@ class EtablissementCreate(BaseModel):
     adresse: str | None = None
     referent_nom: str
     referent_contact: str
+    referent_secteur_geo_id: str | None = None
     comptabilite_nom: str
     comptabilite_contact: str
+    comptabilite_secteur_geo_id: str | None = None
 
 
 class EtablissementUpdate(BaseModel):
@@ -533,8 +535,10 @@ class EtablissementUpdate(BaseModel):
     adresse: str | None = None
     referent_nom: str | None = None
     referent_contact: str | None = None
+    referent_secteur_geo_id: str | None = None
     comptabilite_nom: str | None = None
     comptabilite_contact: str | None = None
+    comptabilite_secteur_geo_id: str | None = None
     statut: StatutEtablissement | None = None
 
 
@@ -543,6 +547,9 @@ class BeneficiaireCreate(BaseModel):
     client_id: str | None = None
     nom: str | None = None
     contact: str | None = None
+    # Utilisé seulement à la création d'un nouveau client (client_id absent) — un client existant
+    # doit déjà porter son propre secteur, cf. app/routers/beneficiaires.py::create_beneficiaire.
+    secteur_geo_id: str | None = None
     boutique_ids: list[str] = []
     etablissement_id: str
     poste: str

@@ -66,6 +66,8 @@ def create_utilisateur(
         raise HTTPException(status_code=409, detail="Un utilisateur avec ce contact existe déjà")
     if not db.get(RoleDB, payload.role):
         raise HTTPException(status_code=404, detail="Rôle introuvable")
+    if payload.role == "livreur" and not payload.secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur est obligatoire pour un livreur.")
 
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
     auteur = f"{current_user.prenom} {current_user.nom}"

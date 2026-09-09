@@ -39,12 +39,16 @@ def _to_schema(b: BeneficiaireDB, db: Session, current_user: UtilisateurDB) -> B
     # ne représente la comptabilité d'un établissement précis (ce sont les garants, hors
     # authentification KFSTORE, qui y accèdent via leur jeton de validation).
     salaire = b.salaire_reference if current_user.role == ROLE_ADMINISTRATEUR else None
+    secteur_beneficiaire = b.client.secteur_geo_id
+    secteurs_garants = {etablissement.referent_secteur_geo_id, etablissement.comptabilite_secteur_geo_id} if etablissement else set()
+    secteur_incoherent = not secteur_beneficiaire or not secteurs_garants or secteur_beneficiaire not in secteurs_garants
     return Beneficiaire(
         id=b.id, client_id=b.client_id, client_nom=b.client.nom, client_contact=b.client.contact,
         etablissement_id=b.etablissement_id, etablissement_nom=etablissement.nom if etablissement else b.etablissement_id,
         numero_membre=b.numero_membre, poste=b.poste,
         salaire_reference=salaire, engagement_signe_url=b.engagement_signe_url, engagement_signe_date=b.engagement_signe_date,
         plafond_suspendu=b.plafond_suspendu, plafond_disponible=plafond_disponible(db, b), credit_autorise=b.client.credit_autorise,
+        secteur_incoherent=secteur_incoherent,
     )
 
 
@@ -96,13 +100,17 @@ def create_beneficiaire(
             raise HTTPException(status_code=404, detail="Client introuvable")
         if db.query(BeneficiaireDB).filter(BeneficiaireDB.client_id == client.id).first():
             raise HTTPException(status_code=409, detail="Ce client est déjà rattaché à une fiche bénéficiaire")
+        if not client.secteur_geo_id:
+            raise HTTPException(status_code=400, detail="Le secteur du client est obligatoire — complétez d'abord sa fiche.")
     else:
         if not payload.nom or not payload.contact:
             raise HTTPException(status_code=400, detail="Nom et contact sont requis pour créer un nouveau client")
+        if not payload.secteur_geo_id:
+            raise HTTPException(status_code=400, detail="Le secteur est obligatoire.")
         boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
         client = ClientDB(
             id=str(uuid.uuid4())[:8], nom=payload.nom, contact=payload.contact, boutiques=boutiques,
-            segment=SegmentClient.nouveau, credit_autorise=False,
+            segment=SegmentClient.nouveau, credit_autorise=False, secteur_geo_id=payload.secteur_geo_id,
             created_by=auteur, updated_by=auteur,
         )
         db.add(client)

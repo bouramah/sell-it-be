@@ -138,6 +138,8 @@ def create_client(
 ) -> Client:
     require_permission(db, current_user, CLIENT_GESTION)
     _assert_client_boutiques_access(current_user, payload.boutique_ids)
+    if not payload.secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur est obligatoire.")
     data = payload.model_dump(exclude={"boutique_ids"})
     boutiques = db.query(BoutiqueDB).filter(BoutiqueDB.id.in_(payload.boutique_ids)).all()
     auteur = f"{current_user.prenom} {current_user.nom}"

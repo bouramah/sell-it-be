@@ -121,6 +121,8 @@ def modifier_profil(
     db: Session = Depends(get_db),
 ) -> Client:
     from app.routers.clients import _to_schema
+    if not payload.secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur est obligatoire.")
     client.nom = payload.nom
     client.quartier = payload.quartier
     client.commune = payload.commune

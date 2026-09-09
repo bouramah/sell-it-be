@@ -75,6 +75,8 @@ def create_boutique(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Boutique:
     require_permission(db, current_user, BOUTIQUE_GESTION)
+    if not payload.secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur est obligatoire.")
     boutique_id = str(uuid.uuid4())[:8]
     auteur = f"{current_user.prenom} {current_user.nom}"
     b = BoutiqueDB(
