@@ -143,16 +143,21 @@ def verifier_2fa(payload: Verifier2FARequest, db: Session = Depends(get_db)) -> 
     return TokenResponse(access_token=token)
 
 
+def _to_connecte(u: UtilisateurDB) -> UtilisateurConnecte:
+    return UtilisateurConnecte(
+        id=u.id,
+        nom=u.nom,
+        prenom=u.prenom,
+        contact=u.contact,
+        role=u.role,
+        boutique_ids=[b.id for b in u.boutiques],
+        secteur_geo_id=u.secteur_geo_id,
+    )
+
+
 @router.get("/moi", response_model=UtilisateurConnecte)
 def moi(current_user: UtilisateurDB = Depends(get_current_user)) -> UtilisateurConnecte:
-    return UtilisateurConnecte(
-        id=current_user.id,
-        nom=current_user.nom,
-        prenom=current_user.prenom,
-        contact=current_user.contact,
-        role=current_user.role,
-        boutique_ids=[b.id for b in current_user.boutiques],
-    )
+    return _to_connecte(current_user)
 
 
 @router.put("/moi", response_model=UtilisateurConnecte)
@@ -161,20 +166,17 @@ def modifier_profil(
     db: Session = Depends(get_db),
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> UtilisateurConnecte:
-    """Modification en libre-service du nom/prénom par l'utilisateur connecté — contact, rôle
-    et boutiques restent du ressort de l'administrateur (Utilisateurs & droits)."""
+    """Modification en libre-service du nom/prénom (+ secteur) par l'utilisateur connecté —
+    contact, rôle et boutiques restent du ressort de l'administrateur (Utilisateurs & droits).
+    Secteur obligatoire pour un livreur, comme à la création (cf. Utilisateurs & droits web)."""
+    if current_user.role == "livreur" and not payload.secteur_geo_id:
+        raise HTTPException(status_code=400, detail="Le secteur est obligatoire pour un livreur.")
     current_user.nom = payload.nom.strip()
     current_user.prenom = payload.prenom.strip()
+    current_user.secteur_geo_id = payload.secteur_geo_id
     current_user.updated_by = f"{current_user.prenom} {current_user.nom} (self-service)"
     db.commit()
-    return UtilisateurConnecte(
-        id=current_user.id,
-        nom=current_user.nom,
-        prenom=current_user.prenom,
-        contact=current_user.contact,
-        role=current_user.role,
-        boutique_ids=[b.id for b in current_user.boutiques],
-    )
+    return _to_connecte(current_user)
 
 
 @router.put("/moi/push-token", response_model=MessageResponse)

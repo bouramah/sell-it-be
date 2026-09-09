@@ -481,11 +481,13 @@ class UtilisateurConnecte(BaseModel):
     contact: str
     role: str
     boutique_ids: list[str]
+    secteur_geo_id: str | None = None
 
 
 class ProfilUtilisateurUpdate(BaseModel):
     nom: str
     prenom: str
+    secteur_geo_id: str | None = None
 
 
 # --- Appli mobile client (grand public) — CDC §3.1/§6.1 ---------------------------------
