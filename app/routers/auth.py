@@ -13,6 +13,7 @@ from app.models.write_schemas import (
     ChangementMotDePasseRequest,
     LoginRequest,
     MotDePasseOublieRequest,
+    ProfilUtilisateurUpdate,
     PushTokenUpdate,
     ReinitialisationMotDePasseRequest,
     TokenResponse,
@@ -144,6 +145,28 @@ def verifier_2fa(payload: Verifier2FARequest, db: Session = Depends(get_db)) -> 
 
 @router.get("/moi", response_model=UtilisateurConnecte)
 def moi(current_user: UtilisateurDB = Depends(get_current_user)) -> UtilisateurConnecte:
+    return UtilisateurConnecte(
+        id=current_user.id,
+        nom=current_user.nom,
+        prenom=current_user.prenom,
+        contact=current_user.contact,
+        role=current_user.role,
+        boutique_ids=[b.id for b in current_user.boutiques],
+    )
+
+
+@router.put("/moi", response_model=UtilisateurConnecte)
+def modifier_profil(
+    payload: ProfilUtilisateurUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> UtilisateurConnecte:
+    """Modification en libre-service du nom/prénom par l'utilisateur connecté — contact, rôle
+    et boutiques restent du ressort de l'administrateur (Utilisateurs & droits)."""
+    current_user.nom = payload.nom.strip()
+    current_user.prenom = payload.prenom.strip()
+    current_user.updated_by = f"{current_user.prenom} {current_user.nom} (self-service)"
+    db.commit()
     return UtilisateurConnecte(
         id=current_user.id,
         nom=current_user.nom,

@@ -483,6 +483,11 @@ class UtilisateurConnecte(BaseModel):
     boutique_ids: list[str]
 
 
+class ProfilUtilisateurUpdate(BaseModel):
+    nom: str
+    prenom: str
+
+
 # --- Appli mobile client (grand public) — CDC §3.1/§6.1 ---------------------------------
 
 
