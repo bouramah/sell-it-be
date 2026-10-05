@@ -149,7 +149,7 @@ class ProduitDB(AuditMixin, Base):
     seuil_semi_gros: Mapped[int] = mapped_column(Integer, default=10)
     seuil_gros: Mapped[int] = mapped_column(Integer, default=50)
     unite: Mapped[str] = mapped_column(String(40))
-    code_barres: Mapped[str] = mapped_column(String(40), unique=True)
+    code_barres: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True)
     date_peremption: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     images: Mapped[list["ProduitImageDB"]] = relationship(

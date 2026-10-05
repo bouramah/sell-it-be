@@ -86,7 +86,7 @@ class ProduitCreate(BaseModel):
     seuil_semi_gros: int = 10
     seuil_gros: int = 50
     unite: str
-    code_barres: str
+    code_barres: str | None = None
     date_peremption: date | None = None
 
 

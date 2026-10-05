@@ -72,7 +72,7 @@ def create_produit(
     current_user: UtilisateurDB = Depends(get_current_user),
 ) -> Produit:
     require_permission(db, current_user, PRODUIT_GESTION)
-    if db.query(ProduitDB).filter(ProduitDB.code_barres == payload.code_barres).first():
+    if payload.code_barres and db.query(ProduitDB).filter(ProduitDB.code_barres == payload.code_barres).first():
         raise HTTPException(status_code=409, detail="Un produit avec ce code-barres existe déjà")
     data = payload.model_dump()
     prix_initiaux = {
