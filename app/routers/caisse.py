@@ -151,6 +151,11 @@ def create_mouvement_caisse(
     assert_boutique_access(current_user, caisse.boutique_id)
     if caisse.statut != StatutCaisse.ouverte:
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un mouvement")
+    if payload.type == TypeMouvementCaisse.decaissement and payload.montant > caisse.solde_theorique:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Montant supérieur au solde théorique de la caisse ({caisse.solde_theorique:,.0f} GNF disponible)".replace(",", " "),
+        )
 
     signed_montant = payload.montant if payload.type == TypeMouvementCaisse.encaissement else -payload.montant
     now = datetime.now(timezone.utc)

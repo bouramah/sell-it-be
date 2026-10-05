@@ -61,6 +61,12 @@ def create_depense(
         if payload.montant < SEUIL_VALIDATION_SIEGE
         else StatutValidationDepense.en_attente
     )
+    if payload.montant > caisse.solde_theorique:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Montant supérieur au solde théorique de la caisse ({caisse.solde_theorique:,.0f} GNF disponible)".replace(",", " "),
+        )
+
     auteur_action = f"{current_user.prenom} {current_user.nom}"
     d = DepenseDB(
         id=str(uuid.uuid4())[:8], boutique_id=payload.boutique_id, caisse_id=payload.caisse_id,
@@ -70,13 +76,16 @@ def create_depense(
     )
     db.add(d)
 
+    solde_avant = caisse.solde_theorique
+    solde_apres = solde_avant - payload.montant
     db.add(MouvementCaisseDB(
         id=str(uuid.uuid4())[:8], horodatage=datetime.now(timezone.utc), boutique_id=caisse.boutique_id,
         caisse_id=caisse.id, caisse_libelle=caisse.libelle, type=TypeMouvementCaisse.decaissement,
         motif=f"Dépense — {payload.categorie}", operateur=payload.auteur, montant=-payload.montant,
+        solde_avant=solde_avant, solde_apres=solde_apres,
         created_by=auteur_action, updated_by=auteur_action,
     ))
-    caisse.solde_theorique -= payload.montant
+    caisse.solde_theorique = solde_apres
     caisse.updated_by = auteur_action
 
     db.commit()

@@ -215,13 +215,15 @@ def _deja_paye(db: Session, model, reference: str) -> float:
     return float(total or 0.0)
 
 
-def _caisse_pour_mouvement(db: Session, caisse_id: str, boutique_id: str) -> CaisseDB:
+def _caisse_pour_mouvement(db: Session, caisse_id: str, boutique_id: str, current_user: UtilisateurDB) -> CaisseDB:
     caisse = db.get(CaisseDB, caisse_id)
     if not caisse:
         raise HTTPException(status_code=404, detail="Caisse introuvable")
     if caisse.boutique_id != boutique_id:
         raise HTTPException(status_code=400, detail="Cette caisse n'appartient pas à la boutique sélectionnée")
-    if caisse.statut != StatutCaisse.ouverte:
+    # Un profil portée réseau (administrateur, responsable achats) n'opère pas depuis la caisse
+    # physique de la boutique — ne pas le bloquer si elle n'est pas ouverte sur place.
+    if caisse.statut != StatutCaisse.ouverte and not a_portee_reseau(current_user):
         raise HTTPException(status_code=400, detail="La caisse doit être ouverte pour enregistrer un paiement")
     return caisse
 
@@ -258,7 +260,7 @@ def create_paiement_client(
             raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
         statut = StatutPaiement.encaisse if payload.montant >= restant - 0.01 else StatutPaiement.partiel
 
-    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id)
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id, current_user)
     client_nom = payload.client_nom.strip() or "Client de passage"
 
     p = PaiementClientDB(
@@ -300,7 +302,7 @@ def create_paiement_fournisseur(
             raise HTTPException(status_code=400, detail=f"Le montant dépasse le solde restant ({restant:.0f} GNF)")
         statut = StatutPaiement.paye if payload.montant >= restant - 0.01 else StatutPaiement.partiel
 
-    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id)
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, payload.boutique_id, current_user)
 
     p = PaiementFournisseurDB(
         id=str(uuid.uuid4())[:8], fournisseur_nom=payload.fournisseur_nom, reference=reference, boutique_id=payload.boutique_id,
@@ -334,7 +336,7 @@ def encaisser_paiement_client(
     if p.statut in (StatutPaiement.encaisse, StatutPaiement.paye):
         raise HTTPException(status_code=400, detail="Ce paiement est déjà encaissé")
 
-    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id)
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id, current_user)
 
     _mouvement_caisse(
         db, caisse, TypeMouvementCaisse.encaissement,
@@ -363,7 +365,7 @@ def marquer_paiement_fournisseur_paye(
     if p.statut == StatutPaiement.paye:
         raise HTTPException(status_code=400, detail="Ce paiement est déjà réglé")
 
-    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id)
+    caisse = _caisse_pour_mouvement(db, payload.caisse_id, p.boutique_id, current_user)
 
     _mouvement_caisse(
         db, caisse, TypeMouvementCaisse.decaissement,
