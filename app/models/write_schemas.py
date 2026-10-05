@@ -326,6 +326,14 @@ class TransfertCreate(BaseModel):
     lignes: list[LigneTransfertInput]
 
 
+class TransfertUpdate(BaseModel):
+    # Boutiques source/destination non modifiables ici (on recrée un transfert pour ça) —
+    # seules les lignes et le demandeur peuvent changer, et seulement avant réception (cf.
+    # routeur : une fois reçu, le stock a déjà bougé, l'édition est refusée).
+    demandeur: str
+    lignes: list[LigneTransfertInput]
+
+
 class LigneReceptionInput(BaseModel):
     produit_id: str
     # Si absent pour une ligne, on suppose que tout est arrivé (quantite_recue = quantite demandée).
@@ -346,6 +354,15 @@ class LivraisonCreate(BaseModel):
     livreur: str = ""
     livreur_user_id: str | None = None
     boutique_id: str
+    adresse: str
+    creneau: str
+
+
+class LivraisonUpdate(BaseModel):
+    # commande_id/boutique_id non modifiables ici (identité de la livraison) — seuls le livreur
+    # affecté, l'adresse et le créneau peuvent changer, et seulement avant livraison effective.
+    livreur: str = ""
+    livreur_user_id: str | None = None
     adresse: str
     creneau: str
 

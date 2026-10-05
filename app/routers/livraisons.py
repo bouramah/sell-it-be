@@ -10,7 +10,7 @@ from app.core.module_actions import LIVRAISON_GESTION
 from app.core.security import get_current_user
 from app.db_models.models import CommandeClientDB, LivraisonDB, UtilisateurDB
 from app.models.schemas import Livraison, StatutCommandeClient, StatutLivraison, StatutValidationRemise
-from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate
+from app.models.write_schemas import LivraisonCreate, LivraisonStatutUpdate, LivraisonUpdate
 from app.routers.commandes import appliquer_livraison_stock
 from app.services.notifications import nom_boutique, notifier_client, notifier_utilisateur
 
@@ -80,6 +80,45 @@ def create_livraison(
         db, l.livreur_user_id, "Nouvelle livraison affectée",
         f"Commande #{commande.id} — {l.adresse} — créneau {l.creneau}",
     )
+
+    return l
+
+
+@router.put("/{livraison_id}", response_model=Livraison)
+def update_livraison(
+    livraison_id: str,
+    payload: LivraisonUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> LivraisonDB:
+    l = db.get(LivraisonDB, livraison_id)
+    if not l:
+        raise HTTPException(status_code=404, detail="Livraison introuvable")
+    require_permission(db, current_user, LIVRAISON_GESTION)
+    assert_boutique_access(current_user, l.boutique_id)
+    if l.statut == StatutLivraison.livree:
+        raise HTTPException(status_code=400, detail="Cette livraison a déjà été effectuée, l'affectation n'est plus modifiable")
+
+    livreur_nom = payload.livreur
+    if payload.livreur_user_id:
+        livreur_utilisateur = db.get(UtilisateurDB, payload.livreur_user_id)
+        if not livreur_utilisateur:
+            raise HTTPException(status_code=404, detail="Compte livreur introuvable")
+        livreur_nom = f"{livreur_utilisateur.prenom} {livreur_utilisateur.nom}"
+
+    l.livreur = livreur_nom
+    l.livreur_user_id = payload.livreur_user_id
+    l.adresse = payload.adresse
+    l.creneau = payload.creneau
+    l.updated_by = f"{current_user.prenom} {current_user.nom}"
+    db.commit()
+    db.refresh(l)
+
+    if l.livreur_user_id:
+        notifier_utilisateur(
+            db, l.livreur_user_id, "Livraison réaffectée",
+            f"Commande #{l.commande_id} — {l.adresse} — créneau {l.creneau}",
+        )
 
     return l
 

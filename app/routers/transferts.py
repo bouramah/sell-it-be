@@ -10,7 +10,7 @@ from app.core.module_actions import TRANSFERT_DEMANDE, TRANSFERT_RECEPTION, TRAN
 from app.core.security import get_current_user
 from app.db_models.models import LigneTransfertStockDB, MouvementStockDB, ProduitDB, StockBoutiqueDB, TransfertStockDB, UtilisateurDB
 from app.models.schemas import LigneTransfertStock, MotifMouvementStock, StatutTransfert, TransfertStock
-from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate
+from app.models.write_schemas import TransfertCreate, TransfertStatutUpdate, TransfertUpdate
 from app.services.audit import log_audit
 from app.services.notifications import nom_boutique, notifier_gerants_boutique
 
@@ -83,6 +83,42 @@ def create_transfert(
         statut=StatutTransfert.demande, created_by=auteur, updated_by=auteur,
     )
     db.add(t)
+    for l in payload.lignes:
+        db.add(LigneTransfertStockDB(
+            id=str(uuid.uuid4())[:8], transfert_id=t.id, produit_id=l.produit_id, quantite=l.quantite,
+            created_by=auteur, updated_by=auteur,
+        ))
+    db.commit()
+    db.refresh(t)
+    return _serialiser_transfert(db, t)
+
+
+@router.put("/{transfert_id}", response_model=TransfertStock)
+def update_transfert(
+    transfert_id: str,
+    payload: TransfertUpdate,
+    db: Session = Depends(get_db),
+    current_user: UtilisateurDB = Depends(get_current_user),
+) -> TransfertStock:
+    t = db.get(TransfertStockDB, transfert_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="Transfert introuvable")
+    require_permission(db, current_user, TRANSFERT_DEMANDE)
+    _assert_transfert_access(current_user, t.boutique_source_id, t.boutique_destination_id)
+    if t.statut == StatutTransfert.recu:
+        raise HTTPException(status_code=400, detail="Ce transfert a déjà été reçu, le stock a bougé — il n'est plus modifiable")
+    if not payload.lignes:
+        raise HTTPException(status_code=400, detail="Le transfert doit contenir au moins un produit")
+    for l in payload.lignes:
+        if l.quantite <= 0:
+            raise HTTPException(status_code=400, detail="La quantité doit être positive pour chaque produit")
+
+    auteur = f"{current_user.prenom} {current_user.nom}"
+    t.demandeur = payload.demandeur
+    t.updated_by = auteur
+    for ligne in list(t.lignes):
+        db.delete(ligne)
+    db.flush()
     for l in payload.lignes:
         db.add(LigneTransfertStockDB(
             id=str(uuid.uuid4())[:8], transfert_id=t.id, produit_id=l.produit_id, quantite=l.quantite,
